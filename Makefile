@@ -13,7 +13,9 @@ travis-ci: get-deps
 	go get -u github.com/mattn/goveralls
 	go get -u golang.org/x/tools/cmd/cover
 	goveralls -service=travis-ci
-	go test .
+
+test:
+	go test $(go list ./... | grep -v /vendor/)
 
 glide:
 	@if [ ! -e $(GOPATH)/bin ] ; then mkdir $(GOPATH)/bin ; fi
