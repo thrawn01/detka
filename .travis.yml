@@ -1,0 +1,10 @@
+language: go
+
+go:
+- 1.5
+- 1.6
+
+sudo: true
+
+script:
+- GO15VENDOREXPERIMENT=1 make travis-ci

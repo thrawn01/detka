@@ -1,0 +1,21 @@
+package: github.com/thrawn01/detka
+import:
+- package: github.com/Sirupsen/logrus
+  version: ^0.10.0
+- package: github.com/braintree/manners
+  version: ^0.4.0
+- package: github.com/howler-chat/api-service
+  subpackages:
+  - metrics
+- package: github.com/pressly/chi
+  version: ^1.0.0
+  subpackages:
+  - middleware
+- package: github.com/prometheus/client_golang
+  version: ^0.7.0
+  subpackages:
+  - prometheus
+- package: github.com/thrawn01/args
+- package: golang.org/x/net
+  subpackages:
+  - context
