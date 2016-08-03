@@ -21,6 +21,7 @@ import:
   version: master
 - package: github.com/onsi/ginkgo
   version: master
+- package: gopkg.in/yaml.v2
 - package: golang.org/x/net
   subpackages:
   - context
