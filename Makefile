@@ -1,5 +1,17 @@
-.PHONY: test all dist
+.PHONY: test all dist get-deps
 .DEFAULT_GOAL := all
+
+# GO Dependencies
+GOPATH := $(shell go env | grep GOPATH | sed 's/GOPATH="\(.*\)"/\1/')
+GLIDE := $(GOPATH)/bin/glide
+PATH := $(GOPATH)/bin:$(PATH)
+export $(PATH)
+
+$(GLIDE):
+	go get -u github.com/Masterminds/glide
+
+get-deps: $(GLIDE)
+	$(GLIDE) install
 
 bin/api: cmd/api.go
 	go build -o bin/api cmd/api.go
@@ -17,9 +29,3 @@ travis-ci: get-deps
 test:
 	go test $(go list ./... | grep -v /vendor/)
 
-glide:
-	@if [ ! -e $(GOPATH)/bin ] ; then mkdir $(GOPATH)/bin ; fi
-	@which glide > /dev/null ; if [ $$? -eq 1 ] ; then curl https://glide.sh/get | sh ; fi
-
-get-deps: glide
-	glide install
