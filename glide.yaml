@@ -16,6 +16,11 @@ import:
   subpackages:
   - prometheus
 - package: github.com/thrawn01/args
+  version: master
+- package: github.com/onsi/gomega
+  version: master
+- package: github.com/onsi/ginkgo
+  version: master
 - package: golang.org/x/net
   subpackages:
   - context
