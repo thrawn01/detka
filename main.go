@@ -1,4 +1,4 @@
-package detka
+package main
 
 import (
 	"fmt"
