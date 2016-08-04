@@ -17,7 +17,7 @@ func NewHandler(parser *args.ArgParser) http.Handler {
 	router := chi.NewRouter()
 
 	// Log Every Request
-	router.Use(middleware.Logger)
+	router.Use(Logger)
 	// Recover from panic's
 	router.Use(middleware.Recoverer)
 	// Timeout in 1 second
@@ -60,7 +60,7 @@ func NewEmail(ctx context.Context, resp http.ResponseWriter, req *http.Request) 
 }
 
 func Healthz(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	resp.WriteHeader(500)
 	// TODO: Return 200 {'Ready': true} when connected to our email queue
 	resp.Write([]byte(`{"ready" : false}`))
-	resp.WriteHeader(500)
 }
