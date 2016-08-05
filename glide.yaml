@@ -25,3 +25,5 @@ import:
 - package: golang.org/x/net
   subpackages:
   - context
+- package: github.com/Shopify/sarama
+  version: ^1.10.0

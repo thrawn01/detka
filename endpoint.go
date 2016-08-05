@@ -6,14 +6,17 @@ import (
 
 	"fmt"
 
+	"encoding/json"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/pressly/chi"
 	"github.com/pressly/chi/middleware"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thrawn01/args"
+	"github.com/thrawn01/detka/kafka"
 	"golang.org/x/net/context"
 )
 
-func NewHandler(parser *args.ArgParser) http.Handler {
+func NewHandler(ctx *kafka.Context) http.Handler {
 	router := chi.NewRouter()
 
 	// Log Every Request
@@ -26,6 +29,8 @@ func NewHandler(parser *args.ArgParser) http.Handler {
 	router.Use(MimeJson)
 	// Record Metrics for every request
 	router.Use(RecordMetrics)
+	// TODO: Pass our context into every request
+	//router.Use(kafka.Middleware(ctx))
 
 	// TODO: Add queue pipeline to context
 
@@ -41,26 +46,56 @@ func NewHandler(parser *args.ArgParser) http.Handler {
 		resp.Write([]byte(fmt.Sprintf(`{"error" : "Path '%s' Not Found"}`, req.URL.RequestURI())))
 	})
 
-	router.Get("/message", NewEmail)
+	router.Get("/message", NewMessage)
 
 	return router
 }
 
-func NewEmail(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+func NewMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	// TODO: Authenticate User has access to create emails?
+
+	req.ParseForm()
+
+	msg := Message{
+		Subject: req.FormValue("subject"),
+		Text:    req.FormValue("text"),
+		From:    req.FormValue("from"),
+		To:      req.FormValue("to"),
+	}
+
 	// Validate the request
+	if err := msg.Validate(); err != nil {
+		BadRequest(resp, err, log.Fields{"method": "NewEmail", "type": "validate"})
+	}
 
-	// Authenticate User has access to create emails?
+	// Generate a new id
+	msg.Id = NewId()
 
-	// Generate a request id
+	// Marshall the message back to json
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		InternalError(resp, err, log.Fields{"method": "NewEmail", "type": "json"})
+		return
+	}
 
 	// Send the email request to the queue to be processed
+	producer := kafka.GetKafka(ctx)
+	if err := producer.Send(payload); err != nil {
+		InternalError(resp, err, log.Fields{"method": "NewEmail", "type": "kafta"})
+		return
+	}
 
-	// Return the request id
-	resp.Write([]byte(`{"requestId" : "fakeid"}`))
+	// Return the message id
+	ToJson(resp, NewMessageResponse{Id: msg.Id, Message: "Queued, Thank you."})
 }
 
 func Healthz(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	/*kafkaCtx := kafka.GetContext(ctx)
+	if kafkaCtx.IsConnected() {
+		resp.WriteHeader(200)
+		resp.Write([]byte(`{"ready" : true}`))
+		return
+	}*/
 	resp.WriteHeader(500)
-	// TODO: Return 200 {'Ready': true} when connected to our email queue
 	resp.Write([]byte(`{"ready" : false}`))
 }
