@@ -19,6 +19,8 @@ func main() {
 		args.EnvPrefix("API_"))
 	parser.AddOption("--bind").Alias("-b").Env("BIND").
 		Default("0.0.0.0:8080").Help("The interface to bind too")
+	parser.AddOption("--kafka-endpoints").Alias("-e").Env("KAFKA_ENDPOINTS").
+		Default("localhost:9092").Help("A comma separated list of kafka endpoints")
 	parser.AddOption("--debug").Alias("-d").IsTrue().Env("DEBUG").
 		Help("Output debug messages")
 

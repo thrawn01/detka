@@ -29,10 +29,8 @@ func NewHandler(ctx *kafka.Context) http.Handler {
 	router.Use(MimeJson)
 	// Record Metrics for every request
 	router.Use(RecordMetrics)
-	// TODO: Pass our context into every request
-	//router.Use(kafka.Middleware(ctx))
-
-	// TODO: Add queue pipeline to context
+	// Pass the kafka context into every request
+	router.Use(kafka.Middleware(ctx))
 
 	// TODO: Add API Throttling
 
@@ -46,12 +44,12 @@ func NewHandler(ctx *kafka.Context) http.Handler {
 		resp.Write([]byte(fmt.Sprintf(`{"error" : "Path '%s' Not Found"}`, req.URL.RequestURI())))
 	})
 
-	router.Get("/message", NewMessage)
+	router.Post("/messages", NewMessages)
 
 	return router
 }
 
-func NewMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
 	// TODO: Authenticate User has access to create emails?
 
 	req.ParseForm()

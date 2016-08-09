@@ -26,6 +26,13 @@ type KafkaImpl struct {
 	ctx      *Context
 }
 
+func NewKafa(ctx *Context, producer sarama.SyncProducer) Kafka {
+	return &KafkaImpl{
+		producer: producer,
+		ctx:      ctx,
+	}
+}
+
 func (self *KafkaImpl) Send(payload []byte) error {
 	_, _, err := self.producer.SendMessage(&sarama.ProducerMessage{
 		Topic: kafkaTopic,
@@ -58,7 +65,7 @@ func GetKafka(ctx context.Context) Kafka {
 func Middleware(kafkaContext *Context) func(chi.Handler) chi.Handler {
 	return func(next chi.Handler) chi.Handler {
 		return chi.HandlerFunc(func(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-			SetContext(ctx, kafkaContext)
+			ctx = SetContext(ctx, kafkaContext)
 			next.ServeHTTPC(ctx, resp, req)
 		})
 	}
