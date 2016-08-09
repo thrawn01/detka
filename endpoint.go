@@ -8,7 +8,7 @@ import (
 
 	"encoding/json"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/pressly/chi"
 	"github.com/pressly/chi/middleware"
 	"github.com/prometheus/client_golang/prometheus"
@@ -66,7 +66,7 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 
 	// Validate the request
 	if err := msg.Validate(); err != nil {
-		BadRequest(resp, err, log.Fields{"method": "NewMessages", "type": "validate"})
+		BadRequest(resp, err, logrus.Fields{"method": "NewMessages", "type": "validate"})
 	}
 
 	// Generate a new id
@@ -75,14 +75,14 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 	// Marshall the message back to json
 	payload, err := json.Marshal(msg)
 	if err != nil {
-		InternalError(resp, err, log.Fields{"method": "NewMessages", "type": "json"})
+		InternalError(resp, err, logrus.Fields{"method": "NewMessages", "type": "json"})
 		return
 	}
 
 	// Send the email request to the queue to be processed
 	producer := kafka.GetProducer(ctx)
 	if err := producer.Send(payload); err != nil {
-		InternalError(resp, err, log.Fields{"method": "NewMessages", "type": "kafta"})
+		InternalError(resp, err, logrus.Fields{"method": "NewMessages", "type": "kafta"})
 		return
 	}
 

@@ -7,7 +7,7 @@ import (
 
 	"net/http"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/dancannon/gorethink"
 	"github.com/pressly/chi"
 	"github.com/thrawn01/args"
@@ -99,7 +99,7 @@ func (self *Manager) Start() {
 				return
 			}
 		connect:
-			log.Info("Connecting to Rethink Cluster ", endpoints)
+			logrus.Info("Connecting to Rethink Cluster ", endpoints)
 			// Attempt to connect, if we fail to connect, set a timer to try again
 			if !self.connect() {
 				timer = time.NewTimer(time.Second).C
@@ -125,7 +125,7 @@ func (self *Manager) connect() bool {
 		Password:  opts.String("rethink-password"),
 	})
 	if err != nil {
-		log.WithFields(log.Fields{
+		logrus.WithFields(logrus.Fields{
 			"type":   "rethink",
 			"method": "Manager.connect()",
 		}).Errorf("Rethinkdb Connect Failed - %s", err.Error())

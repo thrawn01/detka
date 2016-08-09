@@ -7,7 +7,7 @@ import (
 	"os/signal"
 
 	"github.com/Shopify/sarama"
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/braintree/manners"
 	"github.com/dancannon/gorethink"
 	"github.com/pressly/chi"
@@ -40,8 +40,8 @@ func main() {
 
 	opt := parser.ParseArgsSimple(nil)
 	if opt.Bool("debug") {
-		log.Info("Debug Enabled")
-		log.SetLevel(log.DebugLevel)
+		logrus.Info("Debug Enabled")
+		logrus.SetLevel(logrus.DebugLevel)
 	}
 
 	rethinkMgr := rethink.NewManager(parser)
@@ -60,7 +60,7 @@ func main() {
 		case msg := <-messages:
 			session := rethinkMgr.GetSession()
 			if err := handleMessage(session, parser, msg); err != nil {
-				log.WithFields(log.Fields{
+				logrus.WithFields(logrus.Fields{
 					"type":   "rethink",
 					"method": "handleMessage()",
 				}).Error("Received Error - ", err.Error())
@@ -69,7 +69,7 @@ func main() {
 				}
 			}
 		case err := <-errors:
-			log.WithFields(log.Fields{
+			logrus.WithFields(logrus.Fields{
 				"type":   "kafka",
 				"method": "Start()",
 			}).Error("Received Error - ", err.Error())
@@ -83,7 +83,7 @@ func main() {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan, os.Interrupt, os.Kill)
 		sig := <-signalChan
-		log.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
+		logrus.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
 		manners.Close()
 		close(done)
 	}()
@@ -102,7 +102,7 @@ func main() {
 	})
 
 	fmt.Printf("Listening on %s...\n", opt.String("bind"))
-	log.Fatal(server.ListenAndServe())
+	logrus.Fatal(server.ListenAndServe())
 
 }
 

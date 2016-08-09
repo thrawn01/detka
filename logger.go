@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 
 	"github.com/oxtoacart/bpool"
@@ -96,7 +96,7 @@ func Logger(next chi.Handler) chi.Handler {
 		}
 
 		// Write out the log entry
-		log.Info(buf)
+		logrus.Info(buf)
 		// Put the buffer back into the pool
 		bufferPool.Put(buf)
 	})

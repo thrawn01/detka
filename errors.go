@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"net/http"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thrawn01/detka/metrics"
 )
 
-func InternalError(resp http.ResponseWriter, err error, fields log.Fields) {
-	log.WithFields(fields).Error(err.Error())
+func InternalError(resp http.ResponseWriter, err error, fields logrus.Fields) {
+	logrus.WithFields(fields).Error(err.Error())
 	metrics.InternalErrors.With(ToLabels(fields)).Inc()
 	resp.WriteHeader(http.StatusInternalServerError)
 	resp.Write([]byte(fmt.Sprintf(`{"error": "%s"}`, http.StatusText(500))))
 }
 
-func BadRequest(resp http.ResponseWriter, err error, fields log.Fields) {
-	log.WithFields(fields).Error(err.Error())
+func BadRequest(resp http.ResponseWriter, err error, fields logrus.Fields) {
+	logrus.WithFields(fields).Error(err.Error())
 	metrics.InternalErrors.With(ToLabels(fields)).Inc()
 
 	obj := map[string]string{
@@ -26,7 +26,7 @@ func BadRequest(resp http.ResponseWriter, err error, fields log.Fields) {
 	}
 	payload, err := json.Marshal(obj)
 	if err != nil {
-		log.WithFields(log.Fields{"method": "BadRequest", "type": "internal"}).
+		logrus.WithFields(logrus.Fields{"method": "BadRequest", "type": "internal"}).
 			Error("json.Marshal() failed on '%+v' with '%s'", obj, err.Error())
 		resp.WriteHeader(http.StatusInternalServerError)
 		resp.Write([]byte(`{"error": "Internal Server Error"}`))
@@ -36,7 +36,7 @@ func BadRequest(resp http.ResponseWriter, err error, fields log.Fields) {
 	resp.Write(payload)
 }
 
-func ToLabels(tags log.Fields) prometheus.Labels {
+func ToLabels(tags logrus.Fields) prometheus.Labels {
 	result := prometheus.Labels{}
 	for key, value := range tags {
 		result[key] = value.(string)

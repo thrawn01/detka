@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/pborman/uuid"
 	"github.com/pkg/errors"
 )
@@ -52,6 +52,6 @@ func NewId() string {
 
 func ToJson(resp http.ResponseWriter, payload interface{}) {
 	if err := json.NewEncoder(resp).Encode(payload); err != nil {
-		InternalError(resp, err, log.Fields{"method": "ToJson", "type": "json"})
+		InternalError(resp, err, logrus.Fields{"method": "ToJson", "type": "json"})
 	}
 }
