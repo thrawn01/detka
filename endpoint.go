@@ -17,7 +17,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-func NewHandler(kafkaCtx *kafka.Context, rethinkCtx *rethink.Context) http.Handler {
+func NewHandler(kafkaCtx *kafka.ProducerManager, rethinkCtx *rethink.Manager) http.Handler {
 	router := chi.NewRouter()
 
 	// Log Every Request

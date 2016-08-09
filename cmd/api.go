@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/signal"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/braintree/manners"
 	"github.com/thrawn01/args"
 	"github.com/thrawn01/detka"
@@ -30,14 +30,14 @@ func main() {
 
 	opt := parser.ParseArgsSimple(nil)
 	if opt.Bool("debug") {
-		log.Info("Debug Enabled")
-		log.SetLevel(log.DebugLevel)
+		logrus.Info("Debug Enabled")
+		logrus.SetLevel(logrus.DebugLevel)
 	}
 
 	// kafka.Context manages kafka connections
-	kafkaCtx := kafka.NewContext(parser)
+	kafkaCtx := kafka.NewProducerManager(parser)
 	// rethink.Context manages rethink connections
-	rethinkCtx := rethink.NewContext(parser)
+	rethinkCtx := rethink.NewManager(parser)
 
 	// TODO: Setup args-backend watchers for rethink and kafka contexts
 
@@ -47,14 +47,14 @@ func main() {
 	})
 
 	fmt.Printf("Listening on %s...\n", opt.String("bind"))
-	log.Fatal(server.ListenAndServe())
+	logrus.Fatal(server.ListenAndServe())
 
 	// Catch SIGINT Gracefully so we don't drop any active http requests
 	go func() {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan, os.Interrupt, os.Kill)
 		sig := <-signalChan
-		log.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
+		logrus.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
 		manners.Close()
 		kafkaCtx.Stop()
 		rethinkCtx.Stop()

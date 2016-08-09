@@ -44,8 +44,8 @@ var _ = Describe("Endpoint", func() {
 	var req *http.Request
 	var resp *httptest.ResponseRecorder
 	var hook *logTest.Hook
-	var kafkaCtx *kafka.Context
-	var rethinkCtx *rethink.Context
+	var kafkaCtx *kafka.ProducerManager
+	var rethinkCtx *rethink.Manager
 	var parser *args.ArgParser
 
 	BeforeEach(func() {
@@ -56,9 +56,9 @@ var _ = Describe("Endpoint", func() {
 		// Get our kafka Config from our local Environment
 		parser = parseArgs(nil)
 		// Create a kafka context for our service
-		kafkaCtx = kafka.NewContext(parser)
+		kafkaCtx = kafka.NewProducerManager(parser)
 		// Create a rethink context for our service
-		rethinkCtx = rethink.NewContext(parser)
+		rethinkCtx = rethink.NewManager(parser)
 		// Create a new handler instance
 		server = detka.NewHandler(kafkaCtx, rethinkCtx)
 		// Record HTTP responses.

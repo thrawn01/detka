@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/Shopify/sarama"
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/pressly/chi"
 	"github.com/thrawn01/args"
 	"golang.org/x/net/context"
@@ -17,22 +17,22 @@ import (
 type contextKey int
 
 const (
-	kafkaContextKey contextKey = 1
+	producerManagerKey contextKey = 1
 )
 
-func SetContext(ctx context.Context, kafkaCtx *Context) context.Context {
-	return context.WithValue(ctx, kafkaContextKey, kafkaCtx)
+func SetProducerManager(ctx context.Context, manager *ProducerManager) context.Context {
+	return context.WithValue(ctx, producerManagerKey, manager)
 }
 
-func GetContext(ctx context.Context) *Context {
-	obj, ok := ctx.Value(kafkaContextKey).(*Context)
+func GetProducerManager(ctx context.Context) *ProducerManager {
+	obj, ok := ctx.Value(producerManagerKey).(*ProducerManager)
 	if !ok {
-		panic("No kafka.Context found in context")
+		panic("No kafka.ProducerManager found in context")
 	}
 	return obj
 }
 
-type Context struct {
+type ProducerManager struct {
 	done      chan struct{}
 	parser    *args.ArgParser
 	current   chan Producer
@@ -40,27 +40,24 @@ type Context struct {
 	reconnect chan []string
 }
 
-func NewContext(parser *args.ArgParser) *Context {
-	ctx := &Context{
+func NewProducerManager(parser *args.ArgParser) *ProducerManager {
+	manager := &ProducerManager{
 		parser: parser,
 	}
-	ctx.Start()
-	return ctx
+	manager.Start()
+	return manager
 }
 
-func (self *Context) Get() Producer {
+func (self *ProducerManager) Get() Producer {
 	return <-self.current
 }
 
-// Tell the context goroutine to start reconnecting
-func (self *Context) SignalReconnect() {
+func (self *ProducerManager) SignalReconnect() {
 	// Always get the latest list of endpoints from our config
 	self.reconnect <- self.parser.GetOpts().StringSlice("kafka-endpoints")
 }
 
-// Start 2 goroutines, the first one provides the current kafka interface
-// the second connects or reconnects to the kakfa cluster
-func (self *Context) Start() {
+func (self *ProducerManager) Start() {
 	self.current = make(chan Producer)
 	self.new = make(chan Producer)
 	self.reconnect = make(chan []string)
@@ -97,14 +94,12 @@ func (self *Context) Start() {
 
 			select {
 			case brokerList = <-self.reconnect:
-				goto connect
 			case <-timer:
-				goto connect
 			case <-self.done:
 				return
 			}
-		connect:
-			log.Info("Connecting to Kafka Cluster ", brokerList)
+
+			logrus.Info("Connecting to Kafka Cluster ", brokerList)
 			// Attempt to connect, if we fail to connect, set a timer to try again
 			if !self.connect(brokerList) {
 				timer = time.NewTimer(time.Second).C
@@ -119,7 +114,7 @@ func (self *Context) Start() {
 	attemptedConnect.Wait()
 }
 
-func (self *Context) connect(brokerList []string) bool {
+func (self *ProducerManager) connect(brokerList []string) bool {
 	opts := self.parser.GetOpts()
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForAll
@@ -127,22 +122,22 @@ func (self *Context) connect(brokerList []string) bool {
 
 	producer, err := sarama.NewSyncProducer(brokerList, config)
 	if err != nil {
-		log.Error("NewSyncProducer() failed - ", err)
+		logrus.Error("NewSyncProducer() failed - ", err)
 		return false
 	}
 	self.new <- NewProducer(self, opts.String("kafka-topic"), producer)
 	return true
 }
 
-func (self *Context) Stop() {
+func (self *ProducerManager) Stop() {
 	close(self.done)
 }
 
-// Injects kafka.Context into the context.Context for each request
-func Middleware(kafkaContext *Context) func(chi.Handler) chi.Handler {
+// Injects kafka.ProducerManager into the context.Context for each request
+func Middleware(producerManager *ProducerManager) func(chi.Handler) chi.Handler {
 	return func(next chi.Handler) chi.Handler {
 		return chi.HandlerFunc(func(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-			ctx = SetContext(ctx, kafkaContext)
+			ctx = SetProducerManager(ctx, producerManager)
 			next.ServeHTTPC(ctx, resp, req)
 		})
 	}

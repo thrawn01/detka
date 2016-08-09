@@ -17,22 +17,22 @@ import (
 type contextKey int
 
 const (
-	rethinkContextKey contextKey = 1
+	rethinkManagerKey contextKey = 1
 )
 
-func SetContext(ctx context.Context, kafkaCtx *Context) context.Context {
-	return context.WithValue(ctx, rethinkContextKey, kafkaCtx)
+func SetManager(ctx context.Context, manager *Manager) context.Context {
+	return context.WithValue(ctx, rethinkManagerKey, manager)
 }
 
-func GetContext(ctx context.Context) *Context {
-	obj, ok := ctx.Value(rethinkContextKey).(*Context)
+func GetManager(ctx context.Context) *Manager {
+	obj, ok := ctx.Value(rethinkManagerKey).(*Manager)
 	if !ok {
-		panic("No rethink.Context found in context")
+		panic("No rethink.Manager found in context")
 	}
 	return obj
 }
 
-type Context struct {
+type Manager struct {
 	done      chan struct{}
 	parser    *args.ArgParser
 	current   chan *gorethink.Session
@@ -40,26 +40,23 @@ type Context struct {
 	reconnect chan bool
 }
 
-func NewContext(parser *args.ArgParser) *Context {
-	ctx := &Context{
+func NewManager(parser *args.ArgParser) *Manager {
+	manager := &Manager{
 		parser: parser,
 	}
-	ctx.Start()
-	return ctx
+	manager.Start()
+	return manager
 }
 
-func (self *Context) Get() *gorethink.Session {
+func (self *Manager) GetSession() *gorethink.Session {
 	return <-self.current
 }
 
-// Tell the context goroutine to start reconnecting
-func (self *Context) SignalReconnect() {
+func (self *Manager) SignalReconnect() {
 	self.reconnect <- true
 }
 
-// Start 2 goroutines, the first one provides the current rethink session
-// the second connects or reconnects to the rethink cluster
-func (self *Context) Start() {
+func (self *Manager) Start() {
 	self.current = make(chan *gorethink.Session)
 	self.new = make(chan *gorethink.Session)
 	self.reconnect = make(chan bool)
@@ -117,7 +114,7 @@ func (self *Context) Start() {
 	attemptedConnect.Wait()
 }
 
-func (self *Context) connect() bool {
+func (self *Manager) connect() bool {
 	opts := self.parser.GetOpts()
 
 	// Attempt to connect to rethinkdb
@@ -130,7 +127,7 @@ func (self *Context) connect() bool {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"type":   "rethink",
-			"method": "Context.connect()",
+			"method": "Manager.connect()",
 		}).Errorf("Rethinkdb Connect Failed - %s", err.Error())
 		return false
 	}
@@ -138,19 +135,19 @@ func (self *Context) connect() bool {
 	return true
 }
 
-func (self *Context) Stop() {
-	session := self.Get()
+func (self *Manager) Stop() {
+	session := self.GetSession()
 	if session != nil {
 		session.Close()
 	}
 	close(self.done)
 }
 
-// Injects rethink.Context into the context.Context for each request
-func Middleware(rethinkCtx *Context) func(chi.Handler) chi.Handler {
+// Injects rethink.Manager into the context.Context for each request
+func Middleware(manager *Manager) func(chi.Handler) chi.Handler {
 	return func(next chi.Handler) chi.Handler {
 		return chi.HandlerFunc(func(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-			ctx = SetContext(ctx, rethinkCtx)
+			ctx = SetManager(ctx, manager)
 			next.ServeHTTPC(ctx, resp, req)
 		})
 	}

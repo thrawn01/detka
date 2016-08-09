@@ -14,10 +14,10 @@ type Producer interface {
 type KafkaProducer struct {
 	producer sarama.SyncProducer
 	topic    string
-	ctx      *Context
+	ctx      *ProducerManager
 }
 
-func NewProducer(ctx *Context, topic string, producer sarama.SyncProducer) Producer {
+func NewProducer(ctx *ProducerManager, topic string, producer sarama.SyncProducer) Producer {
 	return &KafkaProducer{
 		producer: producer,
 		topic:    topic,
@@ -66,5 +66,5 @@ func (self *NilProducer) Send(payload []byte) error {
 
 // Returns the Kafka interface from our context
 func GetProducer(ctx context.Context) Producer {
-	return GetContext(ctx).Get()
+	return GetProducerManager(ctx).Get()
 }
