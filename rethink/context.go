@@ -1,4 +1,4 @@
-package kafka
+package rethink
 
 import (
 	"sync"
@@ -7,8 +7,8 @@ import (
 
 	"net/http"
 
-	"github.com/Shopify/sarama"
 	log "github.com/Sirupsen/logrus"
+	"github.com/dancannon/gorethink"
 	"github.com/pressly/chi"
 	"github.com/thrawn01/args"
 	"golang.org/x/net/context"
@@ -17,17 +17,17 @@ import (
 type contextKey int
 
 const (
-	kafkaContextKey contextKey = 1
+	rethinkContextKey contextKey = 1
 )
 
 func SetContext(ctx context.Context, kafkaCtx *Context) context.Context {
-	return context.WithValue(ctx, kafkaContextKey, kafkaCtx)
+	return context.WithValue(ctx, rethinkContextKey, kafkaCtx)
 }
 
 func GetContext(ctx context.Context) *Context {
-	obj, ok := ctx.Value(kafkaContextKey).(*Context)
+	obj, ok := ctx.Value(rethinkContextKey).(*Context)
 	if !ok {
-		panic("No kafka.Context found in context")
+		panic("No rethink.Context found in context")
 	}
 	return obj
 }
@@ -35,9 +35,9 @@ func GetContext(ctx context.Context) *Context {
 type Context struct {
 	done      chan struct{}
 	parser    *args.ArgParser
-	current   chan Producer
-	new       chan Producer
-	reconnect chan []string
+	current   chan *gorethink.Session
+	new       chan *gorethink.Session
+	reconnect chan bool
 }
 
 func NewContext(parser *args.ArgParser) *Context {
@@ -48,29 +48,27 @@ func NewContext(parser *args.ArgParser) *Context {
 	return ctx
 }
 
-func (self *Context) Get() Producer {
+func (self *Context) Get() *gorethink.Session {
 	return <-self.current
 }
 
 // Tell the context goroutine to start reconnecting
 func (self *Context) SignalReconnect() {
-	// Always get the latest list of endpoints from our config
-	self.reconnect <- self.parser.GetOpts().StringSlice("kafka-endpoints")
+	self.reconnect <- true
 }
 
-// Start 2 goroutines, the first one provides the current kafka interface
-// the second connects or reconnects to the kakfa cluster
+// Start 2 goroutines, the first one provides the current rethink session
+// the second connects or reconnects to the rethink cluster
 func (self *Context) Start() {
-	self.current = make(chan Producer)
-	self.new = make(chan Producer)
-	self.reconnect = make(chan []string)
+	self.current = make(chan *gorethink.Session)
+	self.new = make(chan *gorethink.Session)
+	self.reconnect = make(chan bool)
 	self.done = make(chan struct{})
 
-	// Always feed clients the latest kafka interface object
+	// Always feed clients the latest rethink session
 	go func() {
 		defer close(self.current)
-		var current Producer
-		current = &NilProducer{}
+		var current *gorethink.Session
 
 		for {
 			select {
@@ -84,7 +82,7 @@ func (self *Context) Start() {
 
 	var attemptedConnect sync.WaitGroup
 
-	// Waits until it receives a list of brokers, then attempts to connect to the kafka cluster
+	// Waits until it receives a list of endpoints, then attempts to connect
 	// if it fails will sleep for 1 second and try again
 	go func() {
 		defer close(self.new)
@@ -92,11 +90,11 @@ func (self *Context) Start() {
 		attemptedConnect.Add(1)
 
 		for {
-			var brokerList []string
+			var endpoints []string
 			var timer <-chan time.Time
 
 			select {
-			case brokerList = <-self.reconnect:
+			case <-self.reconnect:
 				goto connect
 			case <-timer:
 				goto connect
@@ -104,9 +102,9 @@ func (self *Context) Start() {
 				return
 			}
 		connect:
-			log.Info("Connecting to Kafka Cluster ", brokerList)
+			log.Info("Connecting to Rethink Cluster ", endpoints)
 			// Attempt to connect, if we fail to connect, set a timer to try again
-			if !self.connect(brokerList) {
+			if !self.connect() {
 				timer = time.NewTimer(time.Second).C
 			}
 			once.Do(func() { attemptedConnect.Done() })
@@ -119,30 +117,40 @@ func (self *Context) Start() {
 	attemptedConnect.Wait()
 }
 
-func (self *Context) connect(brokerList []string) bool {
+func (self *Context) connect() bool {
 	opts := self.parser.GetOpts()
-	config := sarama.NewConfig()
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Retry.Max = 3
 
-	producer, err := sarama.NewSyncProducer(brokerList, config)
+	// Attempt to connect to rethinkdb
+	session, err := gorethink.Connect(gorethink.ConnectOpts{
+		Addresses: opts.StringSlice("rethink-endpoints"),
+		Database:  opts.String("rethink-db"),
+		Username:  opts.String("rethink-user"),
+		Password:  opts.String("rethink-password"),
+	})
 	if err != nil {
-		log.Error("NewSyncProducer() failed - ", err)
+		log.WithFields(log.Fields{
+			"type":   "rethink",
+			"method": "Context.connect()",
+		}).Errorf("Rethinkdb Connect Failed - %s", err.Error())
 		return false
 	}
-	self.new <- NewProducer(self, opts.String("kafka-topic"), producer)
+	self.new <- session
 	return true
 }
 
 func (self *Context) Stop() {
+	session := self.Get()
+	if session != nil {
+		session.Close()
+	}
 	close(self.done)
 }
 
-// Injects kafka.Context into the context.Context for each request
-func Middleware(kafkaContext *Context) func(chi.Handler) chi.Handler {
+// Injects rethink.Context into the context.Context for each request
+func Middleware(rethinkCtx *Context) func(chi.Handler) chi.Handler {
 	return func(next chi.Handler) chi.Handler {
 		return chi.HandlerFunc(func(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-			ctx = SetContext(ctx, kafkaContext)
+			ctx = SetContext(ctx, rethinkCtx)
 			next.ServeHTTPC(ctx, resp, req)
 		})
 	}

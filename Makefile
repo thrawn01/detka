@@ -48,12 +48,12 @@ stop-containers:
 
 create-topic:
 	@docker run --rm ches/kafka kafka-topics.sh \
-	--create --topic messages-topic --replication-factor 1 \
+	--create --topic detka-topic --replication-factor 1 \
 	--partitions 1 --zookeeper ${DETKA_DOCKER_HOST}:2181
 
 describe-topic:
 	@docker run --rm ches/kafka kafka-topics.sh \
-	--describe -topic messages-topic --zookeeper ${DETKA_DOCKER_HOST}:2181
+	--describe -topic detka-topic --zookeeper ${DETKA_DOCKER_HOST}:2181
 
 $(GLIDE):
 	go get -u github.com/Masterminds/glide

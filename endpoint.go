@@ -13,10 +13,11 @@ import (
 	"github.com/pressly/chi/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thrawn01/detka/kafka"
+	"github.com/thrawn01/detka/rethink"
 	"golang.org/x/net/context"
 )
 
-func NewHandler(ctx *kafka.Context) http.Handler {
+func NewHandler(kafkaCtx *kafka.Context, rethinkCtx *rethink.Context) http.Handler {
 	router := chi.NewRouter()
 
 	// Log Every Request
@@ -30,7 +31,9 @@ func NewHandler(ctx *kafka.Context) http.Handler {
 	// Record Metrics for every request
 	router.Use(RecordMetrics)
 	// Pass the kafka context into every request
-	router.Use(kafka.Middleware(ctx))
+	router.Use(kafka.Middleware(kafkaCtx))
+	// Pass the rethink context into every request
+	router.Use(rethink.Middleware(rethinkCtx))
 
 	// TODO: Add API Throttling
 
@@ -63,7 +66,7 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 
 	// Validate the request
 	if err := msg.Validate(); err != nil {
-		BadRequest(resp, err, log.Fields{"method": "NewEmail", "type": "validate"})
+		BadRequest(resp, err, log.Fields{"method": "NewMessages", "type": "validate"})
 	}
 
 	// Generate a new id
@@ -72,14 +75,14 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 	// Marshall the message back to json
 	payload, err := json.Marshal(msg)
 	if err != nil {
-		InternalError(resp, err, log.Fields{"method": "NewEmail", "type": "json"})
+		InternalError(resp, err, log.Fields{"method": "NewMessages", "type": "json"})
 		return
 	}
 
 	// Send the email request to the queue to be processed
-	producer := kafka.GetKafka(ctx)
+	producer := kafka.GetProducer(ctx)
 	if err := producer.Send(payload); err != nil {
-		InternalError(resp, err, log.Fields{"method": "NewEmail", "type": "kafta"})
+		InternalError(resp, err, log.Fields{"method": "NewMessages", "type": "kafta"})
 		return
 	}
 

@@ -14,6 +14,7 @@ import (
 	"github.com/thrawn01/args"
 	"github.com/thrawn01/detka"
 	"github.com/thrawn01/detka/kafka"
+	"github.com/thrawn01/detka/rethink"
 )
 
 func TestDetka(t *testing.T) {
@@ -30,7 +31,11 @@ func okToTestKafka() {
 func parseArgs(argv *[]string) *args.ArgParser {
 	parser := args.NewParser()
 	parser.AddOption("--kafka-endpoints").Alias("-e").Env("KAFKA_ENDPOINTS")
+	parser.AddOption("--kafka-topic").Alias("-t").Default("detka-topic")
 	parser.ParseArgs(argv)
+	// TODO: Topic should be different for each run
+	//opts.Set("kafka-topic", "some-generated-value")
+	//parser.Apply(opts)
 	return parser
 }
 
@@ -39,7 +44,9 @@ var _ = Describe("Endpoint", func() {
 	var req *http.Request
 	var resp *httptest.ResponseRecorder
 	var hook *logTest.Hook
-	var ctx *kafka.Context
+	var kafkaCtx *kafka.Context
+	var rethinkCtx *rethink.Context
+	var parser *args.ArgParser
 
 	BeforeEach(func() {
 		// Avoid printing log entries to StdError
@@ -47,40 +54,39 @@ var _ = Describe("Endpoint", func() {
 		// Allow us to inspect log messages
 		hook = logTest.NewGlobal()
 		// Get our kafka Config from our local Environment
-		parser := parseArgs(nil)
-		// Create a new service context for our service
-		ctx = kafka.NewContext(parser)
-		// Start the connect and feed routines
-		ctx.Start()
+		parser = parseArgs(nil)
+		// Create a kafka context for our service
+		kafkaCtx = kafka.NewContext(parser)
+		// Create a rethink context for our service
+		rethinkCtx = rethink.NewContext(parser)
 		// Create a new handler instance
-		server = detka.NewHandler(ctx)
+		server = detka.NewHandler(kafkaCtx, rethinkCtx)
 		// Record HTTP responses.
 		resp = httptest.NewRecorder()
 	})
 
 	AfterEach(func() {
-		ctx.Stop()
+		kafkaCtx.Stop()
+		rethinkCtx.Stop()
 		hook.Reset()
 	})
 
 	Describe("Error Conditions", func() {
 		Context("When requested path doesn't exist", func() {
 			It("should return 404", func() {
-				server = detka.NewHandler(nil)
+				server = detka.NewHandler(nil, nil)
 				resp = httptest.NewRecorder()
 				req, _ = http.NewRequest("GET", "/path-not-found", nil)
 				server.ServeHTTP(resp, req)
-				Expect(len(hook.Entries)).To(Equal(2))
 				Expect(resp.Code).To(Equal(404))
 			})
 		})
 		Context("When app is not ready /healthz", func() {
 			It("should return non 200", func() {
-				server = detka.NewHandler(nil)
+				server = detka.NewHandler(nil, nil)
 				resp = httptest.NewRecorder()
 				req, _ = http.NewRequest("GET", "/healthz", nil)
 				server.ServeHTTP(resp, req)
-				Expect(len(hook.Entries)).To(Equal(2))
 				Expect(resp.Code).To(Not(Equal(200)))
 			})
 		})
@@ -98,8 +104,12 @@ var _ = Describe("Endpoint", func() {
 					"subject": {"this is a test subject"},
 				}
 				server.ServeHTTP(resp, req)
-				Expect(len(hook.Entries)).To(Equal(2))
+				//Expect(len(hook.Entries)).To(Equal(2))
 				Expect(resp.Code).To(Equal(200))
+
+				/*consumer = kafka.NewConsumer(parser)
+				message := consumer.Get()
+				Expect(message).To(Equal([]byte("")))*/
 			})
 		})
 	})

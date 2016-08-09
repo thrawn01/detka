@@ -23,6 +23,8 @@ type Message struct {
 	Text    string `json:"text"`
 	From    string `json:"from"`
 	To      string `json:"recipients"`
+	Type    string `json:"type"`
+	Status  string `json:"status"`
 }
 
 // After marshaling from JSON, call this method to validate the object is intact
