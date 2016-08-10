@@ -23,7 +23,7 @@ type Message struct {
 	Text    string `json:"text"`
 	From    string `json:"from"`
 	To      string `json:"recipients"`
-	Type    string `json:"type"`
+	Type    string `json:"type,omitempty"`
 	Status  string `json:"status"`
 }
 
@@ -52,6 +52,9 @@ func NewId() string {
 
 func ToJson(resp http.ResponseWriter, payload interface{}) {
 	if err := json.NewEncoder(resp).Encode(payload); err != nil {
-		InternalError(resp, err, logrus.Fields{"method": "ToJson", "type": "json"})
+		InternalError(resp, err.Error(), logrus.Fields{"method": "ToJson", "type": "json"})
 	}
+}
+
+func FromJson(payload []byte) {
 }

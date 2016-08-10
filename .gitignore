@@ -3,3 +3,4 @@
 bin/
 vendor/
 glide.lock
+rethinkdb_data/

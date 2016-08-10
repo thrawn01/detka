@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dancannon/gorethink"
+	"github.com/pkg/errors"
 	"github.com/pressly/chi"
 	"github.com/pressly/chi/middleware"
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,7 +19,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-func NewHandler(kafkaCtx *kafka.ProducerManager, rethinkCtx *rethink.Manager) http.Handler {
+func NewHandler(producerManager *kafka.ProducerManager, rethinkManager *rethink.Manager) http.Handler {
 	router := chi.NewRouter()
 
 	// Log Every Request
@@ -31,9 +33,9 @@ func NewHandler(kafkaCtx *kafka.ProducerManager, rethinkCtx *rethink.Manager) ht
 	// Record Metrics for every request
 	router.Use(RecordMetrics)
 	// Pass the kafka context into every request
-	router.Use(kafka.Middleware(kafkaCtx))
+	router.Use(kafka.Middleware(producerManager))
 	// Pass the rethink context into every request
-	router.Use(rethink.Middleware(rethinkCtx))
+	router.Use(rethink.Middleware(rethinkManager))
 
 	// TODO: Add API Throttling
 
@@ -48,8 +50,55 @@ func NewHandler(kafkaCtx *kafka.ProducerManager, rethinkCtx *rethink.Manager) ht
 	})
 
 	router.Post("/messages", NewMessages)
+	router.Get("/messages/:messageId", GetMessage)
 
 	return router
+}
+
+func GetMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	messageId := chi.URLParam(ctx, "messageId")
+
+	if err := ValidMessageId(messageId); err != nil {
+		BadRequest(resp, err.Error(), logrus.Fields{"method": "GetMessage", "type": "validate"})
+	}
+
+	session := rethink.GetSession(ctx)
+	if session == nil {
+		InternalError(resp, "rethink session is nil",
+			logrus.Fields{"method": "GetMessage", "type": "rethink"})
+		return
+	}
+
+	var message Message
+	cursor, err := gorethink.Table("messages").Get(messageId).Run(session, rethink.RunOpts)
+	if err != nil {
+		InternalError(resp, err.Error(), logrus.Fields{"method": "GetMessage", "type": "rethink"})
+	} else if err := cursor.One(&message); err != nil {
+		if cursor.IsNil() {
+			NotFound(resp, fmt.Sprintf("message id - %s not found"),
+				logrus.Fields{"method": "GetMessage", "type": "rethink"})
+			return
+		}
+		InternalError(resp, err.Error(), logrus.Fields{"method": "GetMessage.One()", "type": "rethink"})
+	} else {
+		// Scrub the type from the messsage
+		message.Type = ""
+		ToJson(resp, message)
+	}
+}
+
+func InsertMessage(session *gorethink.Session, msg *Message) error {
+	msg.Id = NewId()
+	changed, err := gorethink.Table("messages").Insert(msg).RunWrite(session, rethink.RunOpts)
+	if err != nil {
+		return errors.Wrap(err, "Insert")
+	} else if changed.Errors != 0 {
+		return errors.New(fmt.Sprintf("Errors on Insert - %s", changed.FirstError))
+	}
+	if len(changed.GeneratedKeys) == 0 {
+		return errors.New(fmt.Sprintf("No Generated keys after Insert - %s", changed.FirstError))
+	}
+	return nil
 }
 
 func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
@@ -66,7 +115,7 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 
 	// Validate the request
 	if err := msg.Validate(); err != nil {
-		BadRequest(resp, err, logrus.Fields{"method": "NewMessages", "type": "validate"})
+		BadRequest(resp, err.Error(), logrus.Fields{"method": "NewMessages", "type": "validate"})
 	}
 
 	// Generate a new id
@@ -75,14 +124,14 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 	// Marshall the message back to json
 	payload, err := json.Marshal(msg)
 	if err != nil {
-		InternalError(resp, err, logrus.Fields{"method": "NewMessages", "type": "json"})
+		InternalError(resp, err.Error(), logrus.Fields{"method": "NewMessages", "type": "json"})
 		return
 	}
 
 	// Send the email request to the queue to be processed
 	producer := kafka.GetProducer(ctx)
 	if err := producer.Send(payload); err != nil {
-		InternalError(resp, err, logrus.Fields{"method": "NewMessages", "type": "kafta"})
+		InternalError(resp, err.Error(), logrus.Fields{"method": "NewMessages", "type": "kafta"})
 		return
 	}
 

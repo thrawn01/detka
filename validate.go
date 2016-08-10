@@ -14,3 +14,10 @@ func ValidEmail(address string) error {
 	}
 	return nil
 }
+
+func ValidMessageId(id string) error {
+	if len(id) == 26 {
+		return nil
+	}
+	return errors.New("Invalid Message ID - must be 26 characters")
+}

@@ -17,9 +17,11 @@ type ConsumerManager struct {
 }
 
 func NewConsumerManager(parser *args.ArgParser) *ConsumerManager {
-	return &ConsumerManager{
+	manager := &ConsumerManager{
 		parser: parser,
 	}
+	manager.Start()
+	return manager
 }
 
 func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
@@ -45,6 +47,10 @@ func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
 
 func (self *ConsumerManager) GetConsumerChannel() chan sarama.PartitionConsumer {
 	return self.new
+}
+
+func (self *ConsumerManager) GetConsumer() sarama.PartitionConsumer {
+	return <-self.new
 }
 
 func (self *ConsumerManager) Start() {

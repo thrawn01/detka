@@ -29,6 +29,15 @@ var InternalErrors = prometheus.NewCounterVec(
 	[]string{"type", "method"},
 )
 
+var Non200Responses = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: "api",
+		Name:      "non_200_response_count",
+		Help:      "The number of non 200 responses.",
+	},
+	[]string{"type", "method"},
+)
+
 // Must call before using the RecordMetrics() middleware
 func Init() {
 	prometheus.MustRegister(HTTPRequestCount)

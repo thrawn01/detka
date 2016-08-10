@@ -7,6 +7,8 @@ import (
 
 	"net/http"
 
+	"strings"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/dancannon/gorethink"
 	"github.com/pressly/chi"
@@ -20,8 +22,21 @@ const (
 	rethinkManagerKey contextKey = 1
 )
 
+var RunOpts = gorethink.RunOpts{
+	Durability: "hard",
+}
+
+var ExecOpts = gorethink.ExecOpts{
+	Durability: "hard",
+}
+
 func SetManager(ctx context.Context, manager *Manager) context.Context {
 	return context.WithValue(ctx, rethinkManagerKey, manager)
+}
+
+func GetSession(ctx context.Context) *gorethink.Session {
+	obj := GetManager(ctx)
+	return obj.GetSession()
 }
 
 func GetManager(ctx context.Context) *Manager {
@@ -87,7 +102,6 @@ func (self *Manager) Start() {
 		attemptedConnect.Add(1)
 
 		for {
-			var endpoints []string
 			var timer <-chan time.Time
 
 			select {
@@ -99,7 +113,6 @@ func (self *Manager) Start() {
 				return
 			}
 		connect:
-			logrus.Info("Connecting to Rethink Cluster ", endpoints)
 			// Attempt to connect, if we fail to connect, set a timer to try again
 			if !self.connect() {
 				timer = time.NewTimer(time.Second).C
@@ -118,6 +131,7 @@ func (self *Manager) connect() bool {
 	opts := self.parser.GetOpts()
 
 	// Attempt to connect to rethinkdb
+	logrus.Info("Connecting to Rethink Cluster ", opts.StringSlice("rethink-endpoints"))
 	session, err := gorethink.Connect(gorethink.ConnectOpts{
 		Addresses: opts.StringSlice("rethink-endpoints"),
 		Database:  opts.String("rethink-db"),
@@ -131,8 +145,28 @@ func (self *Manager) connect() bool {
 		}).Errorf("Rethinkdb Connect Failed - %s", err.Error())
 		return false
 	}
+
+	if opts.Bool("rethink-auto-create") {
+		if !self.createDbIfNotExists(session, opts) {
+			return false
+		}
+
+		if !self.createTablesIfNotExists(session) {
+			return false
+		}
+	}
+
 	self.new <- session
 	return true
+}
+
+func (self *Manager) createDbIfNotExists(session *gorethink.Session, opts *args.Options) bool {
+	err := gorethink.DBCreate(opts.String("rethink-db")).Exec(session, ExecOpts)
+	return handleCreateError("createDbIfNotExists", err)
+}
+func (self *Manager) createTablesIfNotExists(session *gorethink.Session) bool {
+	err := gorethink.TableCreate("messages", gorethink.TableCreateOpts{PrimaryKey: "Id"}).Exec(session, ExecOpts)
+	return handleCreateError("createTablesIfNotExists", err)
 }
 
 func (self *Manager) Stop() {
@@ -151,4 +185,18 @@ func Middleware(manager *Manager) func(chi.Handler) chi.Handler {
 			next.ServeHTTPC(ctx, resp, req)
 		})
 	}
+}
+
+func handleCreateError(context string, err error) bool {
+	if err != nil {
+		if !strings.Contains(err.Error(), "already exists") {
+			logrus.WithFields(logrus.Fields{
+				"method": context,
+				"type":   "rethink",
+			}).Error(err)
+			return false
+		}
+		logrus.Debug(err)
+	}
+	return true
 }
