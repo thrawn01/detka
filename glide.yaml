@@ -27,3 +27,4 @@ import:
   - context
 - package: github.com/Shopify/sarama
   version: ^1.10.0
+- package: github.com/mailgun/mailgun-go

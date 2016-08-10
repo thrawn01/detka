@@ -57,9 +57,9 @@ func NewHandler(producerManager *kafka.ProducerManager, rethinkManager *rethink.
 func GetMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
 	// TODO: Authenticate User has access to create emails?
 
-	messageId := chi.URLParam(ctx, "messageId")
+	msgId := chi.URLParam(ctx, "messageId")
 
-	if err := ValidMessageId(messageId); err != nil {
+	if err := ValidMessageId(msgId); err != nil {
 		BadRequest(resp, err.Error(), logrus.Fields{"method": "GetMessage", "type": "validate"})
 	}
 
@@ -71,18 +71,18 @@ func GetMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request
 	}
 
 	var message Message
-	cursor, err := gorethink.Table("messages").Get(messageId).Run(session, rethink.RunOpts)
+	cursor, err := gorethink.Table("messages").Get(msgId).Run(session, rethink.RunOpts)
 	if err != nil {
 		InternalError(resp, err.Error(), logrus.Fields{"method": "GetMessage", "type": "rethink"})
 	} else if err := cursor.One(&message); err != nil {
 		if cursor.IsNil() {
-			NotFound(resp, fmt.Sprintf("message id - %s not found"),
+			NotFound(resp, fmt.Sprintf("message id - %s not found", msgId),
 				logrus.Fields{"method": "GetMessage", "type": "rethink"})
 			return
 		}
 		InternalError(resp, err.Error(), logrus.Fields{"method": "GetMessage.One()", "type": "rethink"})
 	} else {
-		// Scrub the type from the messsage
+		// Scrub the type from the message
 		message.Type = ""
 		ToJson(resp, message)
 	}
@@ -127,12 +127,33 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 }
 
 func Healthz(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-	/*kafkaCtx := kafka.GetContext(ctx)
-	if kafkaCtx.IsConnected() {
-		resp.WriteHeader(200)
-		resp.Write([]byte(`{"ready" : true}`))
+	// Validate the health of kafka producer
+	producer := kafka.GetProducer(ctx)
+
+	notReady := func() {
+		resp.WriteHeader(500)
+		resp.Write([]byte(`{"ready" : false}`))
+	}
+
+	payload, err := json.Marshal(Message{Type: "ping"})
+	if err != nil {
+		notReady()
 		return
-	}*/
-	resp.WriteHeader(500)
-	resp.Write([]byte(`{"ready" : false}`))
+	}
+
+	if err := producer.Send(payload); err != nil {
+		notReady()
+		return
+	}
+
+	// Validate the health of rethink
+	rethinkMgr := rethink.GetManager(ctx)
+	session := rethinkMgr.GetSession()
+	if session == nil || !session.IsConnected() {
+		notReady()
+		return
+	}
+
+	resp.WriteHeader(200)
+	resp.Write([]byte(`{"ready" : true}`))
 }

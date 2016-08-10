@@ -101,7 +101,7 @@ var _ = Describe("Functional Tests", func() {
 		hook.Reset()
 	})
 
-	Describe("Error Conditions", func() {
+	Describe("Service Conditions", func() {
 		Context("When requested path doesn't exist", func() {
 			It("should return 404", func() {
 				server = detka.NewHandler(nil, nil)
@@ -111,13 +111,12 @@ var _ = Describe("Functional Tests", func() {
 				Expect(resp.Code).To(Equal(404))
 			})
 		})
-		Context("When app is not ready /healthz", func() {
-			It("should return non 200", func() {
-				server = detka.NewHandler(nil, nil)
-				resp = httptest.NewRecorder()
+		Context("When app is ready /healthz", func() {
+			It("should return 200", func() {
 				req, _ = http.NewRequest("GET", "/healthz", nil)
 				server.ServeHTTP(resp, req)
-				Expect(resp.Code).To(Not(Equal(200)))
+				Expect(resp.Code).To(Equal(200))
+				Expect(resp.Body.String()).To(Equal(`{"ready" : true}`))
 			})
 		})
 	})

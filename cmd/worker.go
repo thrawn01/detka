@@ -40,6 +40,12 @@ func main() {
 	parser.AddOption("--rethink-auto-create").IsBool().Default("true").Env("RETHINK_AUTO_CREATE").
 		Help("Create db and tables if none exists")
 
+	/* TODO: Add options for mailgun
+	opts.String("mailgun-domain"),
+	opts.String("mailgun-api-key"),
+	opts.String("mailgun-public-api-key"))
+	*/
+
 	opt := parser.ParseArgsSimple(nil)
 	if opt.Bool("debug") {
 		logrus.Info("Debug Enabled")
@@ -50,7 +56,7 @@ func main() {
 	consumerMgr := kafka.NewConsumerManager(parser)
 
 	// Worker to handle messages from the event loop
-	worker := detka.NewWorker(consumerMgr, rethinkMgr, NewMailer(parser))
+	worker := detka.NewWorker(consumerMgr, rethinkMgr, detka.NewMailer(parser))
 
 	go func() {
 		signalChan := make(chan os.Signal, 1)
