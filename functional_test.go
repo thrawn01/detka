@@ -1,16 +1,14 @@
 package detka_test
 
 import (
-	"os"
-	"testing"
-
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-
-	"encoding/json"
-
-	"fmt"
+	"os"
+	"sync"
+	"testing"
 
 	logTest "github.com/Sirupsen/logrus/hooks/test"
 	. "github.com/onsi/ginkgo"
@@ -20,6 +18,25 @@ import (
 	"github.com/thrawn01/detka/kafka"
 	"github.com/thrawn01/detka/rethink"
 )
+
+type TestMailer struct {
+	Result *detka.Message
+	Done   sync.WaitGroup
+}
+
+func NewTestMailer(msg *detka.Message) *TestMailer {
+	test := &TestMailer{
+		Result: msg,
+	}
+	test.Done.Add(1)
+	return test
+}
+
+func (self *TestMailer) Send(msg detka.Message) error {
+	*self.Result = msg
+	self.Done.Done()
+	return nil
+}
 
 func TestDetka(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -52,7 +69,7 @@ func parseArgs(argv *[]string) *args.ArgParser {
 	return parser
 }
 
-var _ = Describe("Endpoint", func() {
+var _ = Describe("Functional Tests", func() {
 	var server http.Handler
 	var req *http.Request
 	var resp *httptest.ResponseRecorder
@@ -106,18 +123,24 @@ var _ = Describe("Endpoint", func() {
 	})
 
 	Describe("POST /messages", func() {
-		var manager *kafka.ConsumerManager
+		var consumerManager *kafka.ConsumerManager
+		var worker *detka.Worker
+		var mailResult detka.Message
+		var mailer *TestMailer
 
 		BeforeEach(func() {
-			manager = kafka.NewConsumerManager(parser)
+			consumerManager = kafka.NewConsumerManager(parser)
+			mailer = NewTestMailer(&mailResult)
+			worker = detka.NewWorker(consumerManager, rethinkManager, mailer)
 		})
 
 		AfterEach(func() {
-			manager.Stop()
+			consumerManager.Stop()
+			worker.Stop()
 		})
 
-		Context("When proper request is made", func() {
-			It("should return 200", func() {
+		Context("When an email message is posted", func() {
+			It("should send an email", func() {
 				okToTestFunctional()
 				req, _ = http.NewRequest("POST", "/messages", nil)
 				req.Form = url.Values{
@@ -130,19 +153,47 @@ var _ = Describe("Endpoint", func() {
 				server.ServeHTTP(resp, req)
 				Expect(resp.Code).To(Equal(200))
 
-				// Get a consumer and verify the message is in the topic
-				consumer := manager.GetConsumer()
-				payload := <-consumer.Messages()
-				var msg detka.Message
-				if err := json.Unmarshal(payload.Value, &msg); err != nil {
+				var respMsg detka.NewMessageResponse
+				if err := json.Unmarshal(resp.Body.Bytes(), &respMsg); err != nil {
 					Fail(err.Error())
 				}
+				Expect(len(respMsg.Id)).To(Equal(26))
+				Expect(respMsg.Message).To(Equal("Queued, Thank you."))
+
+				// Wait until Send() is called on our mailer
+				mailer.Done.Wait()
+
+				// Get the message
+				msg := mailer.Result
 				Expect(msg.From).To(Equal("derrick@rackspace.com"))
 				Expect(msg.To).To(Equal("derrick@rackspace.com"))
 				Expect(msg.Text).To(Equal("this is a test"))
 				Expect(msg.Subject).To(Equal("this is a test subject"))
 				Expect(len(msg.Id)).To(Equal(26))
+
+				resp = httptest.NewRecorder()
+				var savedMsg detka.Message
+
+				// API should respond with message in a "DELIVERED" status
+				req, _ = http.NewRequest("GET", fmt.Sprintf("/messages/%s", msg.Id), nil)
+				server.ServeHTTP(resp, req)
+				Expect(resp.Code).To(Equal(200))
+
+				if err := json.Unmarshal(resp.Body.Bytes(), &savedMsg); err != nil {
+					Fail(err.Error())
+				}
+				Expect(savedMsg.From).To(Equal("derrick@rackspace.com"))
+				Expect(savedMsg.To).To(Equal("derrick@rackspace.com"))
+				Expect(savedMsg.Text).To(Equal("this is a test"))
+				Expect(savedMsg.Subject).To(Equal("this is a test subject"))
+				Expect(savedMsg.Status).To(Equal("DELIVERED"))
+				Expect(savedMsg.Type).To(Equal(""))
+				Expect(len(savedMsg.Id)).To(Equal(26))
 			})
+
+			/*It("should update the message in the database", func() {
+
+			})*/
 		})
 	})
 
@@ -185,4 +236,5 @@ var _ = Describe("Endpoint", func() {
 			})
 		})
 	})
+
 })

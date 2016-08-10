@@ -10,7 +10,6 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/dancannon/gorethink"
-	"github.com/pkg/errors"
 	"github.com/pressly/chi"
 	"github.com/pressly/chi/middleware"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,6 +55,8 @@ func NewHandler(producerManager *kafka.ProducerManager, rethinkManager *rethink.
 }
 
 func GetMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	// TODO: Authenticate User has access to create emails?
+
 	messageId := chi.URLParam(ctx, "messageId")
 
 	if err := ValidMessageId(messageId); err != nil {
@@ -85,20 +86,6 @@ func GetMessage(ctx context.Context, resp http.ResponseWriter, req *http.Request
 		message.Type = ""
 		ToJson(resp, message)
 	}
-}
-
-func InsertMessage(session *gorethink.Session, msg *Message) error {
-	msg.Id = NewId()
-	changed, err := gorethink.Table("messages").Insert(msg).RunWrite(session, rethink.RunOpts)
-	if err != nil {
-		return errors.Wrap(err, "Insert")
-	} else if changed.Errors != 0 {
-		return errors.New(fmt.Sprintf("Errors on Insert - %s", changed.FirstError))
-	}
-	if len(changed.GeneratedKeys) == 0 {
-		return errors.New(fmt.Sprintf("No Generated keys after Insert - %s", changed.FirstError))
-	}
-	return nil
 }
 
 func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Request) {

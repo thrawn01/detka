@@ -49,10 +49,6 @@ func (self *ConsumerManager) GetConsumerChannel() chan sarama.PartitionConsumer 
 	return self.new
 }
 
-func (self *ConsumerManager) GetConsumer() sarama.PartitionConsumer {
-	return <-self.new
-}
-
 func (self *ConsumerManager) Start() {
 	self.new = make(chan sarama.PartitionConsumer)
 	self.reconnect = make(chan bool)
