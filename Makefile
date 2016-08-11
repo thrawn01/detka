@@ -8,8 +8,8 @@ PATH := $(GOPATH)/bin:$(PATH)
 export $(PATH)
 
 # Docker
-export DETKA_DOCKER_HOST=localhost
-DOCKER_MACHINE_IP=$(shell docker-machine ip default)
+export DETKA_DOCKER_HOST=$(shell hostname -I 2> /dev/null | awk '{ print $$1; exit }')
+DOCKER_MACHINE_IP=$(shell docker-machine ip default 2> /dev/null)
 ifneq ($(DOCKER_MACHINE_IP),)
 	DETKA_DOCKER_HOST=$(DOCKER_MACHINE_IP)
 endif
@@ -29,7 +29,7 @@ start-containers:
 	@echo Checking Docker Containers
 	@if [ $(shell docker ps -a | grep -ci detka-zookeeper) -eq 0 ]; then \
 		echo Starting Docker Container detka-zookeeper; \
-		docker run -d --name detka-zookeeper --publish 2181:2181 jplock/zookeeper:3.4.6; \
+		docker run -d --name detka-zookeeper --publish ${DETKA_DOCKER_HOST}:2181:2181 jplock/zookeeper:3.4.6; \
 	elif [ $(shell docker ps | grep -ci detka-zookeeper) -eq 0 ]; then \
 		echo restarting detka-zookeeper; \
 		docker start detka-zookeeper > /dev/null; \
@@ -37,7 +37,7 @@ start-containers:
 	@if [ $(shell docker ps -a | grep -ci detka-kafka) -eq 0 ]; then \
 		echo Starting Docker Container detka-kafka; \
 		docker run -d --hostname localhost \
-		--name detka-kafka --publish 9092:9092 --publish 7203:7203 \
+		--name detka-kafka --publish ${DETKA_DOCKER_HOST}:9092:9092 --publish ${DETKA_DOCKER_HOST}:7203:7203 \
 		--env KAFKA_ADVERTISED_HOST_NAME=${DETKA_DOCKER_HOST} --env ZOOKEEPER_IP=${DETKA_DOCKER_HOST} \
 		ches/kafka; \
 	elif [ $(shell docker ps | grep -ci detka-kafka) -eq 0 ]; then \
@@ -46,7 +46,7 @@ start-containers:
 	fi
 	@if [ $(shell docker ps -a | grep -ci detka-rethink) -eq 0 ]; then \
 		echo Starting Docker Container detka-rethinkdb; \
-		docker run --name detka-rethinkdb -v "$(PWD):/data" -p 8080:8080 -p 28015:28015 -d rethinkdb:latest; \
+		docker run --name detka-rethinkdb -v "$(PWD):/data" -p ${DETKA_DOCKER_HOST}:8080:8080 -p ${DETKA_DOCKER_HOST}:28015:28015 -d rethinkdb:latest; \
 	elif [ $(shell docker ps | grep -ci detka-rethink) -eq 0 ]; then \
 		echo restarting detka-rethinkdb; \
 		docker start detka-rethinkdb > /dev/null; \
@@ -61,9 +61,9 @@ stop-containers:
 		echo Stopping Container detka-kafka; \
 		docker stop detka-kafka > /dev/null; \
 	fi
-	@if [ $(shell docker ps -a | grep -ci detka-rethink) -eq 1 ]; then \
-		echo Stopping Container detka-rethink; \
-		docker stop detka-rethink > /dev/null; \
+	@if [ $(shell docker ps -a | grep -ci detka-rethinkdb) -eq 1 ]; then \
+		echo Stopping Container detka-rethindbk; \
+		docker stop detka-rethinkdb > /dev/null; \
 	fi
 
 create-topic:
@@ -109,7 +109,5 @@ travis-ci: get-deps start-containers
 	go get -u golang.org/x/tools/cmd/cover
 	goveralls -service=travis-ci
 
-test:
+test: get-deps start-containers
 	go test $(go list ./... | grep -v /vendor/)
-
-

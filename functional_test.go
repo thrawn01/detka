@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"io/ioutil"
+	//"io/ioutil"
 
-	"github.com/Sirupsen/logrus"
+	//"github.com/Sirupsen/logrus"
 	logTest "github.com/Sirupsen/logrus/hooks/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -86,7 +86,7 @@ var _ = Describe("Functional Tests", func() {
 
 	BeforeEach(func() {
 		// Avoid printing log entries to StdError
-		logrus.SetOutput(ioutil.Discard)
+		//logrus.SetOutput(ioutil.Discard)
 		// Allow us to inspect log messages
 		hook = logTest.NewGlobal()
 		// Get our kafka Config from our local Environment
