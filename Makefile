@@ -46,7 +46,7 @@ start-containers:
 	fi
 	@if [ $(shell docker ps -a | grep -ci detka-rethink) -eq 0 ]; then \
 		echo Starting Docker Container detka-rethinkdb; \
-		docker run --name detka-rethinkdb -v "$(PWD):/data" -p ${DETKA_DOCKER_HOST}:8080:8080 -p ${DETKA_DOCKER_HOST}:28015:28015 -d rethinkdb:latest; \
+		docker run --name detka-rethinkdb -p ${DETKA_DOCKER_HOST}:8080:8080 -p ${DETKA_DOCKER_HOST}:28015:28015 -d rethinkdb:latest; \
 	elif [ $(shell docker ps | grep -ci detka-rethink) -eq 0 ]; then \
 		echo restarting detka-rethinkdb; \
 		docker start detka-rethinkdb > /dev/null; \

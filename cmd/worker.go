@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 
+	"time"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/braintree/manners"
 	"github.com/pressly/chi"
@@ -78,11 +80,52 @@ func main() {
 		os.Exit(1)
 	}
 
-	rethinkMgr := rethink.NewManager(parser)
-	consumerMgr := kafka.NewConsumerManager(parser)
+	rethinkManager := rethink.NewManager(parser)
+	consumerManager := kafka.NewConsumerManager(parser)
 
 	// Worker to handle messages from the event loop
-	worker := detka.NewWorker(consumerMgr, rethinkMgr, mailer)
+	worker := detka.NewWorker(consumerManager, rethinkManager, mailer)
+
+	if opt.IsSet("config") {
+		configFile := opt.String("config")
+		// Watch our config file for changes
+		cancelWatch, err := args.WatchFile(configFile, time.Second, func(err error) {
+			if err != nil {
+				logrus.Errorf("Error Watching %s - %s", configFile, err.Error())
+				return
+			}
+
+			logrus.Info("Config file changed, Reloading...")
+			content, err := detka.LoadFile(configFile)
+			if err != nil {
+				logrus.Error("Failed to load config - ", err.Error())
+				return
+			}
+			_, err = parser.FromIni(content)
+			if err != nil {
+				logrus.Info("Failed to update config - ", err.Error())
+				return
+			}
+			// Perhaps our endpoints changed, we should reconnect
+			rethinkManager.SignalReconnect()
+			consumerManager.SignalReconnect()
+
+			// Perhaps our mailer config changed
+			mailer, err := detka.NewMailer(parser)
+			if err != nil {
+				logrus.Error("Failed to init Mailer - ", err.Error())
+				return
+			}
+			// Stop the current worker and create a new one
+			worker.Stop()
+			worker = detka.NewWorker(consumerManager, rethinkManager, mailer)
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to watch '%s' -  %s", configFile, err.Error())
+		}
+		// Shut down the watcher when done
+		defer cancelWatch()
+	}
 
 	// Serve up /healthz to indicate the health of our service
 	router := chi.NewRouter()
@@ -94,13 +137,13 @@ func main() {
 		}
 
 		// Validate the health of kafka consumer
-		if !consumerMgr.IsConnected() {
+		if !consumerManager.IsConnected() {
 			notReady()
 			return
 		}
 
 		// Is rethink connected?
-		session := rethinkMgr.GetSession()
+		session := rethinkManager.GetSession()
 		if session == nil || !session.IsConnected() {
 			notReady()
 			return
@@ -125,7 +168,7 @@ func main() {
 		worker.Stop()
 	}()
 
-	fmt.Printf("Listening on %s...\n", opt.String("bind"))
+	logrus.Infof("Listening on %s...\n", opt.String("bind"))
 	err = server.ListenAndServe()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server Error - %s\n", err.Error())

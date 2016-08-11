@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 
+	"time"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/braintree/manners"
 	"github.com/thrawn01/args"
@@ -46,13 +48,15 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	configFile := opt.String("config")
 	if opt.IsSet("config") {
-		content, err := detka.LoadFile(opt.String("config"))
+		content, err := detka.LoadFile(configFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to load config - %s\n", err.Error())
 			os.Exit(1)
 		}
 		opt, err = parser.FromIni(content)
+
 	}
 
 	// manages kafka connections
@@ -60,7 +64,35 @@ func main() {
 	// manages rethink connections
 	rethinkManager := rethink.NewManager(parser)
 
-	// TODO: Setup args-backend watchers for rethink and kafka contexts
+	if opt.IsSet("config") {
+		// Watch our config file for changes
+		cancelWatch, err := args.WatchFile(configFile, time.Second, func(err error) {
+			if err != nil {
+				logrus.Errorf("Error Watching %s - %s", configFile, err.Error())
+				return
+			}
+
+			logrus.Info("Config file changed, Reloading...")
+			content, err := detka.LoadFile(configFile)
+			if err != nil {
+				logrus.Error("Failed to load config - %s\n", err.Error())
+				return
+			}
+			_, err = parser.FromIni(content)
+			if err != nil {
+				logrus.Info("Failed to update config - %s\n", err.Error())
+				return
+			}
+			// Perhaps our endpoints changed, we should reconnect
+			rethinkManager.SignalReconnect()
+			producerManager.SignalReconnect()
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to watch '%s' -  %s", configFile, err.Error())
+		}
+		// Shut down the watcher when done
+		defer cancelWatch()
+	}
 
 	server := manners.NewWithServer(&http.Server{
 		Addr:    opt.String("bind"),
@@ -78,7 +110,7 @@ func main() {
 		rethinkManager.Stop()
 	}()
 
-	fmt.Printf("Listening on %s...\n", opt.String("bind"))
+	logrus.Infof("Listening on %s...\n", opt.String("bind"))
 	err := server.ListenAndServe()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server Error - %s\n", err.Error())

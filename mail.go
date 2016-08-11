@@ -21,12 +21,11 @@ type Mailer interface {
 
 func NewMailer(parser *args.ArgParser) (Mailer, error) {
 	opts := parser.GetOpts()
-
 	if opts.String("mail-transport") == "mailgun" {
 		required := []string{"mailgun-domain", "mailgun-api-key", "mailgun-public-key"}
 		if err := opts.Required(required); err != nil {
 			return nil, errors.New(
-				fmt.Sprintf("%s option is required when 'mailgun' is transport", err.Error()))
+				fmt.Sprintf("'%s' option is required when 'mailgun' is transport", err.Error()))
 		}
 		return &Mailgun{
 			parser: parser,
@@ -35,7 +34,7 @@ func NewMailer(parser *args.ArgParser) (Mailer, error) {
 	required := []string{"smtp-user", "smtp-server", "smtp-password"}
 	if err := opts.Required(required); err != nil {
 		return nil, errors.New(
-			fmt.Sprintf("%s options required when 'smtp' is transport", err.Error()))
+			fmt.Sprintf("'%s' option required when 'smtp' is transport", err.Error()))
 	}
 	return &Smtp{
 		parser: parser,
