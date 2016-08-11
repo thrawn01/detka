@@ -49,7 +49,12 @@ make
 ```
 
 ## Run the API
-First modify the config file in etc/api.ini then run
+First ensure rethinkdb, kafka and zookeeper are running
+```
+make start-containers
+```
+
+Now modify the config file in etc/api.ini then run
 ```
 bin/api -c etc/api.ini
 ```
