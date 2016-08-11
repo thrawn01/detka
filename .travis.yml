@@ -1,10 +1,12 @@
 language: go
 
 go:
-- 1.5
 - 1.6
 
-sudo: false
+sudo: required
+
+services:
+  - docker
 
 script:
 - GO15VENDOREXPERIMENT=1 make travis-ci

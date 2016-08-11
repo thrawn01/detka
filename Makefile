@@ -104,7 +104,7 @@ run-api: bin/api
 clean:
 	rm bin/*
 
-travis-ci: get-deps
+travis-ci: get-deps start-containers
 	go get -u github.com/mattn/goveralls
 	go get -u golang.org/x/tools/cmd/cover
 	goveralls -service=travis-ci
