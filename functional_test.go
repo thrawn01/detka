@@ -10,6 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"io/ioutil"
+
+	"github.com/Sirupsen/logrus"
 	logTest "github.com/Sirupsen/logrus/hooks/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -44,11 +47,8 @@ func TestDetka(t *testing.T) {
 }
 
 func okToTestFunctional() {
-	if os.Getenv("KAFKA_ENDPOINTS") == "" {
-		Skip("KAFKA_ENDPOINTS not set, skipped....")
-	}
-	if os.Getenv("RETHINK_ENDPOINTS") == "" {
-		Skip("RETHINK_ENDPOINTS not set, skipped....")
+	if os.Getenv("DETKA_DOCKER_HOST") == "" {
+		Skip("DETKA_DOCKER_HOST not set, skipped....")
 	}
 }
 
@@ -62,10 +62,16 @@ func parseArgs(argv *[]string) *args.ArgParser {
 	parser.AddOption("--rethink-password").Env("RETHINK_PASSWORD")
 	parser.AddOption("--rethink-db").Env("RETHINK_DATABASE").Default("detka")
 
-	parser.ParseArgs(argv)
-	// TODO: Topic should be different for each run
+	opts, _ := parser.ParseArgs(argv)
+
+	host := os.Getenv("DETKA_DOCKER_HOST")
+	opts.Set("kafka-endpoints", fmt.Sprintf("%s:9092", host))
+	opts.Set("rethink-endpoints", fmt.Sprintf("%s:28015", host))
+
+	// TODO: Topic should be different for each run?
 	//opts.Set("kafka-topic", "some-generated-value")
-	//parser.Apply(opts)
+
+	parser.Apply(opts)
 	return parser
 }
 
@@ -80,7 +86,7 @@ var _ = Describe("Functional Tests", func() {
 
 	BeforeEach(func() {
 		// Avoid printing log entries to StdError
-		//log.SetOutput(ioutil.Discard)
+		logrus.SetOutput(ioutil.Discard)
 		// Allow us to inspect log messages
 		hook = logTest.NewGlobal()
 		// Get our kafka Config from our local Environment
@@ -113,6 +119,7 @@ var _ = Describe("Functional Tests", func() {
 		})
 		Context("When app is ready /healthz", func() {
 			It("should return 200", func() {
+				okToTestFunctional()
 				req, _ = http.NewRequest("GET", "/healthz", nil)
 				server.ServeHTTP(resp, req)
 				Expect(resp.Code).To(Equal(200))

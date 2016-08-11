@@ -43,7 +43,7 @@ func (self *Worker) Start() {
 		for {
 			select {
 			case consumer := <-consumerChan:
-				// Consumer might be closed before self.done, if this is the case, consumer will be nil
+				// Consumer might be closed before self.done, if this is the
 				if consumer != nil {
 					messages = consumer.Messages()
 					errors = consumer.Errors()
@@ -128,7 +128,7 @@ func (self *Worker) saveMessage(msg Message) {
 }
 
 func (self *Worker) handleMessage(payload *sarama.ConsumerMessage) {
-	logrus.Debugf("Got new message -> %+v", payload)
+	logrus.Debugf("Got new message -> %s", payload.Value)
 
 	var msg Message
 	if err := json.Unmarshal(payload.Value, &msg); err != nil {

@@ -14,6 +14,8 @@ type ConsumerManager struct {
 	done      chan struct{}
 	new       chan sarama.PartitionConsumer
 	reconnect chan bool
+	connected bool
+	mutex     sync.Mutex
 }
 
 func NewConsumerManager(parser *args.ArgParser) *ConsumerManager {
@@ -26,12 +28,14 @@ func NewConsumerManager(parser *args.ArgParser) *ConsumerManager {
 
 func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
 	opts := self.parser.GetOpts()
+	logrus.Info("Connecting to Kafka Cluster ", opts.StringSlice("kafka-endpoints"))
 	consumer, err := sarama.NewConsumer(opts.StringSlice("kafka-endpoints"), nil)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"type":   "kafka",
 			"method": "NewConsumer()",
 		}).Error("Failed with - ", err.Error())
+		self.setConnected(false)
 		return nil, err
 	}
 	partition, err := consumer.ConsumePartition(opts.String("kafka-topic"), 0, sarama.OffsetNewest)
@@ -40,6 +44,7 @@ func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
 			"type":   "kafka",
 			"method": "ConsumePartition()",
 		}).Error("Failed with - ", err.Error())
+		self.setConnected(false)
 		return nil, err
 	}
 	return partition, nil
@@ -77,6 +82,7 @@ func (self *ConsumerManager) Start() {
 			}
 			once.Do(func() { attemptedConnect.Done() })
 			if consumer != nil {
+				self.setConnected(true)
 				self.new <- consumer
 			}
 		}
@@ -94,4 +100,15 @@ func (self *ConsumerManager) SignalReconnect() {
 
 func (self *ConsumerManager) Stop() {
 	close(self.done)
+}
+
+func (self *ConsumerManager) IsConnected() bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.connected
+}
+func (self *ConsumerManager) setConnected(set bool) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.connected = set
 }

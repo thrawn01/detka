@@ -22,6 +22,7 @@ func main() {
 		Default("0.0.0.0:8080").Help("The interface to bind too")
 	parser.AddOption("--debug").Alias("-d").IsTrue().Env("DEBUG").
 		Help("Output debug messages")
+	parser.AddOption("--config").Alias("-c").Help("Read options from a config file")
 
 	parser.AddOption("--kafka-endpoints").Alias("-e").Env("KAFKA_ENDPOINTS").
 		Default("localhost:9092").Help("A comma separated list of kafka endpoints")
@@ -45,6 +46,15 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	if opt.IsSet("config") {
+		content, err := detka.LoadFile(opt.String("config"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load config - %s\n", err.Error())
+			os.Exit(1)
+		}
+		opt, err = parser.FromIni(content)
+	}
+
 	// manages kafka connections
 	producerManager := kafka.NewProducerManager(parser)
 	// manages rethink connections
@@ -57,18 +67,22 @@ func main() {
 		Handler: detka.NewHandler(producerManager, rethinkManager),
 	})
 
-	fmt.Printf("Listening on %s...\n", opt.String("bind"))
-	logrus.Fatal(server.ListenAndServe())
-
 	// Catch SIGINT Gracefully so we don't drop any active http requests
 	go func() {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan, os.Interrupt, os.Kill)
 		sig := <-signalChan
 		logrus.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
-		manners.Close()
+		server.Close()
 		producerManager.Stop()
 		rethinkManager.Stop()
 	}()
 
+	fmt.Printf("Listening on %s...\n", opt.String("bind"))
+	err := server.ListenAndServe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Server Error - %s\n", err.Error())
+		os.Exit(1)
+	}
+	os.Exit(0)
 }

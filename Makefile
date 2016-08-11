@@ -1,4 +1,4 @@
-.PHONY: test all dist get-deps
+.PHONY: test all dist get-deps start-containers stop-containers create-topic
 .DEFAULT_GOAL := all
 
 # GO
@@ -13,6 +13,15 @@ DOCKER_MACHINE_IP=$(shell docker-machine ip default)
 ifneq ($(DOCKER_MACHINE_IP),)
 	DETKA_DOCKER_HOST=$(DOCKER_MACHINE_IP)
 endif
+
+export KAFKA_ENDPOINTS=$(DETKA_DOCKER_HOST):9092
+export RETHINK_ENDPOINTS=$(DETKA_DOCKER_HOST):28015
+
+export WORKER_KAFKA_ENDPOINTS=$(KAFKA_ENDPOINTS)
+export WORKER_RETHINK_ENDPOINTS=$(RETHINK_ENDPOINTS)
+
+export API_KAFKA_ENDPOINTS=$(KAFKA_ENDPOINTS)
+export API_RETHINK_ENDPOINTS=$(RETHINK_ENDPOINTS)
 
 ETCD_DOCKER_IMAGE=quay.io/coreos/etcd:latest
 
@@ -75,7 +84,22 @@ get-deps: $(GLIDE)
 bin/api: cmd/api.go
 	go build -o bin/api cmd/api.go
 
-all: bin/api
+bin/worker: cmd/worker.go
+	go build -o bin/worker cmd/worker.go
+
+all: bin/api bin/worker
+
+run-worker: bin/worker
+	@echo "Running bin/worker with the following endpoints..."
+	@echo WORKER_KAFKA_ENDPOINTS=$(WORKER_KAFKA_ENDPOINTS)
+	@echo WORKER_RETHINK_ENDPOINTS=$(WORKER_RETHINK_ENDPOINTS)
+	bin/worker -c etc/worker.ini -d
+
+run-api: bin/api
+	@echo "Running bin/worker with the following endpoints..."
+	@echo API_KAFKA_ENDPOINTS=$(API_KAFKA_ENDPOINTS)
+	@echo API_RETHINK_ENDPOINTS=$(API_RETHINK_ENDPOINTS)
+	bin/api -d
 
 clean:
 	rm bin/*
@@ -87,4 +111,5 @@ travis-ci: get-deps
 
 test:
 	go test $(go list ./... | grep -v /vendor/)
+
 

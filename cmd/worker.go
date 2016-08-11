@@ -18,11 +18,12 @@ import (
 
 func main() {
 	parser := args.NewParser(args.Desc("Mail Workers for baby mailgun"),
-		args.EnvPrefix("WORKER"))
+		args.EnvPrefix("WORKER_"))
 	parser.AddOption("--bind").Alias("-b").Env("BIND").
 		Default("0.0.0.0:1234").Help("The interface to bind too")
 	parser.AddOption("--debug").Alias("-d").IsTrue().Env("DEBUG").
 		Help("Output debug messages")
+	parser.AddOption("--config").Alias("-c").Help("Read options from a config file")
 
 	parser.AddOption("--kafka-endpoints").Alias("-e").Env("KAFKA_ENDPOINTS").
 		Default("localhost:9092").Help("A comma separated list of kafka endpoints")
@@ -40,11 +41,21 @@ func main() {
 	parser.AddOption("--rethink-auto-create").IsBool().Default("true").Env("RETHINK_AUTO_CREATE").
 		Help("Create db and tables if none exists")
 
-	/* TODO: Add options for mailgun
-	opts.String("mailgun-domain"),
-	opts.String("mailgun-api-key"),
-	opts.String("mailgun-public-api-key"))
-	*/
+	// Decide which mail transport to use
+	parser.AddOption("--mail-transport").Alias("-M").Default("smtp").Env("MAIL_TRANSPORT").
+		Help("Choose what transport to use. choices('mailgun', 'smtp')")
+	parser.AddOption("--transport-retry").Alias("-R").Default("3").Env("TRANSPORT_RETRY").
+		Help("How many retries before giving up")
+
+	// Mailgun Options
+	parser.AddOption("--mailgun-domain").Env("MAILGUN_DOMAIN").Help("Mailgun Domain")
+	parser.AddOption("--mailgun-api-key").Env("MAILGUN_API_KEY").Help("Mailgun api-key")
+	parser.AddOption("--mailgun-public-key").Env("MAILGUN_PUBLIC_KEY").Help("Mailgun public-key")
+
+	// SMTP Options
+	parser.AddOption("--smtp-server").Env("SMTP_SERVER").Help("SMTP Server (mail.example.com:25)")
+	parser.AddOption("--smtp-user").Env("SMTP_USER").Help("SMTP User")
+	parser.AddOption("--smtp-password").Env("SMTP_PASSWORD").Help("SMTP Password")
 
 	opt := parser.ParseArgsSimple(nil)
 	if opt.Bool("debug") {
@@ -52,35 +63,73 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	if opt.IsSet("config") {
+		content, err := detka.LoadFile(opt.String("config"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load config - %s\n", err.Error())
+			os.Exit(1)
+		}
+		opt, err = parser.FromIni(content)
+	}
+
+	mailer, err := detka.NewMailer(parser)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to init Mailer - %s\n", err.Error())
+		os.Exit(1)
+	}
+
 	rethinkMgr := rethink.NewManager(parser)
 	consumerMgr := kafka.NewConsumerManager(parser)
 
 	// Worker to handle messages from the event loop
-	worker := detka.NewWorker(consumerMgr, rethinkMgr, detka.NewMailer(parser))
+	worker := detka.NewWorker(consumerMgr, rethinkMgr, mailer)
 
-	go func() {
-		signalChan := make(chan os.Signal, 1)
-		signal.Notify(signalChan, os.Interrupt, os.Kill)
-		sig := <-signalChan
-		logrus.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
-		manners.Close()
-		worker.Stop()
-	}()
-
-	// Serve up our healthz and metrics endpoints
+	// Serve up /healthz to indicate the health of our service
 	router := chi.NewRouter()
 	router.Get("/healthz", func(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-		// TODO: Return 200 if we are connected to kafka and rethink
-		resp.WriteHeader(500)
-		resp.Write([]byte(`{"ready" : false}`))
+		resp.Header().Set("Content-Type", "application/json; charset=utf-8")
+		notReady := func() {
+			resp.WriteHeader(500)
+			resp.Write([]byte(`{"ready" : false}`))
+		}
+
+		// Validate the health of kafka consumer
+		if !consumerMgr.IsConnected() {
+			notReady()
+			return
+		}
+
+		// Is rethink connected?
+		session := rethinkMgr.GetSession()
+		if session == nil || !session.IsConnected() {
+			notReady()
+			return
+		}
+
+		resp.WriteHeader(200)
+		resp.Write([]byte(`{"ready" : true}`))
 	})
+	// TODO: Add metrics handler
 
 	server := manners.NewWithServer(&http.Server{
 		Addr:    opt.String("bind"),
 		Handler: router,
 	})
 
-	fmt.Printf("Listening on %s...\n", opt.String("bind"))
-	logrus.Fatal(server.ListenAndServe())
+	go func() {
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, os.Interrupt, os.Kill)
+		sig := <-signalChan
+		logrus.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
+		server.Close()
+		worker.Stop()
+	}()
 
+	fmt.Printf("Listening on %s...\n", opt.String("bind"))
+	err = server.ListenAndServe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Server Error - %s\n", err.Error())
+		os.Exit(1)
+	}
+	os.Exit(0)
 }

@@ -100,9 +100,12 @@ func NewMessages(ctx context.Context, resp http.ResponseWriter, req *http.Reques
 		To:      req.FormValue("to"),
 	}
 
+	logrus.Debugf("-> %+v\n", msg)
+
 	// Validate the request
 	if err := msg.Validate(); err != nil {
 		BadRequest(resp, err.Error(), logrus.Fields{"method": "NewMessages", "type": "validate"})
+		return
 	}
 
 	// Generate a new id
