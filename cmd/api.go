@@ -21,7 +21,7 @@ func main() {
 		args.Desc("Public API endpoint for baby mailgun"),
 		args.EnvPrefix("API_"))
 	parser.AddOption("--bind").Alias("-b").Env("BIND").
-		Default("0.0.0.0:8080").Help("The interface to bind too")
+		Default("0.0.0.0:4040").Help("The interface to bind too")
 	parser.AddOption("--debug").Alias("-d").IsTrue().Env("DEBUG").
 		Help("Output debug messages")
 	parser.AddOption("--config").Alias("-c").Help("Read options from a config file")

@@ -63,7 +63,7 @@ bin/worker -c etc/worker.ini
 
 ## Create a new message
 ```
-$ curl -X POST http://localhost:8080/messages \
+$ curl -X POST http://localhost:4040/messages \
     -d from='Excited User <excited@samples.mailgun.org>' \
     -d to='devs@mailgun.net' \
     -d subject='Hello' \
@@ -72,7 +72,7 @@ $ curl -X POST http://localhost:8080/messages \
 ```
 Get the status of the message
 ```
-$ curl http://localhost:8080/messages/AL3UDCVPMJDAFFNIO2OP4IYQKE
+$ curl http://localhost:4040/messages/AL3UDCVPMJDAFFNIO2OP4IYQKE
 ```
 
 ## Outstanding issues

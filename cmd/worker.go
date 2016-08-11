@@ -22,7 +22,7 @@ func main() {
 	parser := args.NewParser(args.Desc("Mail Workers for baby mailgun"),
 		args.EnvPrefix("WORKER_"))
 	parser.AddOption("--bind").Alias("-b").Env("BIND").
-		Default("0.0.0.0:1234").Help("The interface to bind too")
+		Default("0.0.0.0:4141").Help("The interface to bind too")
 	parser.AddOption("--debug").Alias("-d").IsTrue().Env("DEBUG").
 		Help("Output debug messages")
 	parser.AddOption("--config").Alias("-c").Help("Read options from a config file")
