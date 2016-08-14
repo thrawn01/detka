@@ -19,15 +19,17 @@ import (
 	"github.com/thrawn01/args"
 	"github.com/thrawn01/detka"
 	"github.com/thrawn01/detka/kafka"
+	"github.com/thrawn01/detka/models"
 	"github.com/thrawn01/detka/rethink"
+	"github.com/thrawn01/detka/store"
 )
 
 type TestMailer struct {
-	Result *detka.Message
+	Result *models.Message
 	Done   sync.WaitGroup
 }
 
-func NewTestMailer(msg *detka.Message) *TestMailer {
+func NewTestMailer(msg *models.Message) *TestMailer {
 	test := &TestMailer{
 		Result: msg,
 	}
@@ -35,8 +37,8 @@ func NewTestMailer(msg *detka.Message) *TestMailer {
 	return test
 }
 
-func (self *TestMailer) Send(msg detka.Message) error {
-	*self.Result = msg
+func (self *TestMailer) Send(msg *models.Message) error {
+	self.Result = msg
 	self.Done.Done()
 	return nil
 }
@@ -83,6 +85,7 @@ var _ = Describe("Functional Tests", func() {
 	var producerManager *kafka.ProducerManager
 	var rethinkManager *rethink.Manager
 	var parser *args.ArgParser
+	var dbStore store.Store
 
 	BeforeEach(func() {
 		// Avoid printing log entries to StdError
@@ -95,8 +98,10 @@ var _ = Describe("Functional Tests", func() {
 		producerManager = kafka.NewProducerManager(parser)
 		// Create a rethink context for our service
 		rethinkManager = rethink.NewManager(parser)
+		// Create the database store
+		dbStore = store.NewRethinkStore(parser, rethinkManager)
 		// Create a new handler instance
-		server = detka.NewHandler(producerManager, rethinkManager)
+		server = detka.NewHandler(producerManager, dbStore)
 		// Record HTTP responses.
 		resp = httptest.NewRecorder()
 	})
@@ -131,13 +136,13 @@ var _ = Describe("Functional Tests", func() {
 	Describe("POST /messages", func() {
 		var consumerManager *kafka.ConsumerManager
 		var worker *detka.Worker
-		var mailResult detka.Message
+		var mailResult models.Message
 		var mailer *TestMailer
 
 		BeforeEach(func() {
 			consumerManager = kafka.NewConsumerManager(parser)
 			mailer = NewTestMailer(&mailResult)
-			worker = detka.NewWorker(consumerManager, rethinkManager, mailer)
+			worker = detka.NewWorker(consumerManager, dbStore, mailer)
 		})
 
 		AfterEach(func() {
@@ -159,7 +164,7 @@ var _ = Describe("Functional Tests", func() {
 				server.ServeHTTP(resp, req)
 				Expect(resp.Code).To(Equal(200))
 
-				var respMsg detka.NewMessageResponse
+				var respMsg models.NewMessageResponse
 				if err := json.Unmarshal(resp.Body.Bytes(), &respMsg); err != nil {
 					Fail(err.Error())
 				}
@@ -178,7 +183,7 @@ var _ = Describe("Functional Tests", func() {
 				Expect(len(msg.Id)).To(Equal(26))
 
 				resp = httptest.NewRecorder()
-				var savedMsg detka.Message
+				var savedMsg models.Message
 
 				// API should respond with message in a "DELIVERED" status
 				req, _ = http.NewRequest("GET", fmt.Sprintf("/messages/%s", msg.Id), nil)
@@ -193,7 +198,6 @@ var _ = Describe("Functional Tests", func() {
 				Expect(savedMsg.Text).To(Equal("this is a test"))
 				Expect(savedMsg.Subject).To(Equal("this is a test subject"))
 				Expect(savedMsg.Status).To(Equal("DELIVERED"))
-				Expect(savedMsg.Type).To(Equal(""))
 				Expect(len(savedMsg.Id)).To(Equal(26))
 			})
 
@@ -207,13 +211,12 @@ var _ = Describe("Functional Tests", func() {
 		Context("When proper request is made", func() {
 			It("should return 200", func() {
 				okToTestFunctional()
-				originalMsg := detka.Message{
+				originalMsg := models.Message{
 					To:      "derrick@rackspace.com",
 					From:    "derrick@rackspace.com",
 					Text:    "this is a test",
 					Subject: "this is a test subject",
 					Status:  "NEW",
-					Type:    "MESSAGE",
 				}
 
 				// Get the session
@@ -221,14 +224,15 @@ var _ = Describe("Functional Tests", func() {
 				Expect(session).To(Not(BeNil()))
 
 				// Insert a message into the db
-				detka.InsertMessage(session, &originalMsg)
+				err := dbStore.InsertMessage(&originalMsg)
+				Expect(err).To(BeNil())
 
 				// Use the endpoint to query the message
 				req, _ = http.NewRequest("GET", fmt.Sprintf("/messages/%s", originalMsg.Id), nil)
 				server.ServeHTTP(resp, req)
 				Expect(resp.Code).To(Equal(200))
 
-				var msg detka.Message
+				var msg models.Message
 				if err := json.Unmarshal(resp.Body.Bytes(), &msg); err != nil {
 					Fail(err.Error())
 				}
@@ -237,7 +241,6 @@ var _ = Describe("Functional Tests", func() {
 				Expect(msg.Text).To(Equal("this is a test"))
 				Expect(msg.Subject).To(Equal("this is a test subject"))
 				Expect(msg.Status).To(Equal("NEW"))
-				Expect(msg.Type).To(Equal(""))
 				Expect(len(msg.Id)).To(Equal(26))
 			})
 		})

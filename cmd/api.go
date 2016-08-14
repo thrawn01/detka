@@ -13,7 +13,7 @@ import (
 	"github.com/thrawn01/args"
 	"github.com/thrawn01/detka"
 	"github.com/thrawn01/detka/kafka"
-	"github.com/thrawn01/detka/rethink"
+	"github.com/thrawn01/detka/store"
 )
 
 func main() {
@@ -62,7 +62,7 @@ func main() {
 	// manages kafka connections
 	producerManager := kafka.NewProducerManager(parser)
 	// manages rethink connections
-	rethinkManager := rethink.NewManager(parser)
+	dbStore := store.NewRethinkStore(parser, nil)
 
 	if opt.IsSet("config") {
 		// Watch our config file for changes
@@ -84,7 +84,7 @@ func main() {
 				return
 			}
 			// Perhaps our endpoints changed, we should reconnect
-			rethinkManager.SignalReconnect()
+			dbStore.SignalReconnect()
 			producerManager.SignalReconnect()
 		})
 		if err != nil {
@@ -96,7 +96,7 @@ func main() {
 
 	server := manners.NewWithServer(&http.Server{
 		Addr:    opt.String("bind"),
-		Handler: detka.NewHandler(producerManager, rethinkManager),
+		Handler: detka.NewHandler(producerManager, dbStore),
 	})
 
 	// Catch SIGINT Gracefully so we don't drop any active http requests
@@ -107,7 +107,7 @@ func main() {
 		logrus.Info(fmt.Sprintf("Captured %v. Exiting...", sig))
 		server.Close()
 		producerManager.Stop()
-		rethinkManager.Stop()
+		dbStore.Stop()
 	}()
 
 	logrus.Infof("Listening on %s...\n", opt.String("bind"))

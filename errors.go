@@ -7,6 +7,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thrawn01/detka/metrics"
+	"github.com/thrawn01/detka/store"
 )
 
 func InternalError(resp http.ResponseWriter, msg string, fields logrus.Fields) {
@@ -14,6 +15,14 @@ func InternalError(resp http.ResponseWriter, msg string, fields logrus.Fields) {
 	metrics.InternalErrors.With(ToLabels(fields)).Inc()
 	resp.WriteHeader(http.StatusInternalServerError)
 	resp.Write([]byte(fmt.Sprintf(`{"error": "%s"}`, http.StatusText(500))))
+}
+
+func StoreError(resp http.ResponseWriter, err error, fields logrus.Fields) {
+	if store.IsNotFound(err) {
+		NotFound(resp, err.Error(), fields)
+		return
+	}
+	InternalError(resp, err.Error(), fields)
 }
 
 func BadRequest(resp http.ResponseWriter, msg string, fields logrus.Fields) {

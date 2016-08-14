@@ -13,10 +13,11 @@ import (
 	"github.com/mailgun/mailgun-go"
 	"github.com/pkg/errors"
 	"github.com/thrawn01/args"
+	"github.com/thrawn01/detka/models"
 )
 
 type Mailer interface {
-	Send(Message) error
+	Send(*models.Message) error
 }
 
 func NewMailer(parser *args.ArgParser) (Mailer, error) {
@@ -45,7 +46,7 @@ type Mailgun struct {
 	parser *args.ArgParser
 }
 
-func (self *Mailgun) Send(msg Message) error {
+func (self *Mailgun) Send(msg *models.Message) error {
 	opts := self.parser.GetOpts()
 
 	mail := mailgun.NewMailgun(
@@ -83,7 +84,7 @@ type Smtp struct {
 	parser *args.ArgParser
 }
 
-func (self *Smtp) Send(msg Message) error {
+func (self *Smtp) Send(msg *models.Message) error {
 	opts := self.parser.GetOpts()
 	server := opts.String("smtp-server")
 

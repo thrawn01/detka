@@ -14,7 +14,7 @@ import (
 	"github.com/thrawn01/args"
 	"github.com/thrawn01/detka"
 	"github.com/thrawn01/detka/kafka"
-	"github.com/thrawn01/detka/rethink"
+	"github.com/thrawn01/detka/store"
 	"golang.org/x/net/context"
 )
 
@@ -80,11 +80,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	rethinkManager := rethink.NewManager(parser)
+	dbStore := store.NewRethinkStore(parser)
 	consumerManager := kafka.NewConsumerManager(parser)
 
 	// Worker to handle messages from the event loop
-	worker := detka.NewWorker(consumerManager, rethinkManager, mailer)
+	worker := detka.NewWorker(consumerManager, dbStore, mailer)
 
 	if opt.IsSet("config") {
 		configFile := opt.String("config")
@@ -107,7 +107,7 @@ func main() {
 				return
 			}
 			// Perhaps our endpoints changed, we should reconnect
-			rethinkManager.SignalReconnect()
+			dbStore.SignalReconnect()
 			consumerManager.SignalReconnect()
 
 			// Perhaps our mailer config changed
@@ -118,7 +118,7 @@ func main() {
 			}
 			// Stop the current worker and create a new one
 			worker.Stop()
-			worker = detka.NewWorker(consumerManager, rethinkManager, mailer)
+			worker = detka.NewWorker(consumerManager, dbStore, mailer)
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to watch '%s' -  %s", configFile, err.Error())
@@ -143,8 +143,7 @@ func main() {
 		}
 
 		// Is rethink connected?
-		session := rethinkManager.GetSession()
-		if session == nil || !session.IsConnected() {
+		if !dbStore.IsConnected() {
 			notReady()
 			return
 		}

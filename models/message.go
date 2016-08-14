@@ -1,13 +1,9 @@
-package detka
+package models
 
 import (
 	"bytes"
 	"encoding/base32"
 
-	"encoding/json"
-	"net/http"
-
-	"github.com/Sirupsen/logrus"
 	"github.com/pborman/uuid"
 	"github.com/pkg/errors"
 )
@@ -23,8 +19,12 @@ type Message struct {
 	Text    string `json:"text"`
 	From    string `json:"from"`
 	To      string `json:"recipients"`
-	Type    string `json:"type,omitempty"`
 	Status  string `json:"status"`
+}
+
+type QueueMessage struct {
+	Id   string `json:"id"`
+	Type string `json:"type"`
 }
 
 // After marshaling from JSON, call this method to validate the object is intact
@@ -48,13 +48,4 @@ func NewId() string {
 	encoder.Close()
 	buf.Truncate(26) // removes the '==' padding
 	return buf.String()
-}
-
-func ToJson(resp http.ResponseWriter, payload interface{}) {
-	if err := json.NewEncoder(resp).Encode(payload); err != nil {
-		InternalError(resp, err.Error(), logrus.Fields{"method": "ToJson", "type": "json"})
-	}
-}
-
-func FromJson(payload []byte) {
 }

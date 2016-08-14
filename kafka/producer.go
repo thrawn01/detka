@@ -1,13 +1,16 @@
 package kafka
 
 import (
+	"encoding/json"
+
 	"github.com/Shopify/sarama"
 	"github.com/pkg/errors"
+	"github.com/thrawn01/detka/models"
 	"golang.org/x/net/context"
 )
 
 type Producer interface {
-	Send([]byte) error
+	Send(models.QueueMessage) error
 }
 
 // Producer Implementation
@@ -25,8 +28,14 @@ func NewProducer(ctx *ProducerManager, topic string, producer sarama.SyncProduce
 	}
 }
 
-func (self *KafkaProducer) Send(payload []byte) error {
-	_, _, err := self.producer.SendMessage(&sarama.ProducerMessage{
+func (self *KafkaProducer) Send(msg models.QueueMessage) error {
+
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = self.producer.SendMessage(&sarama.ProducerMessage{
 		Topic: self.topic,
 		Value: sarama.ByteEncoder(payload),
 	})
@@ -60,7 +69,7 @@ func (self *KafkaProducer) Get(payload []byte) error {
 // Nil Implementation only returns errors
 type NilProducer struct{}
 
-func (self *NilProducer) Send(payload []byte) error {
+func (self *NilProducer) Send(msg models.QueueMessage) error {
 	return errors.New("Not Connected")
 }
 
