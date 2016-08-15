@@ -108,7 +108,7 @@ func (self *RethinkStore) UpdateMessage(id string, fields map[string]interface{}
 }
 
 func (self *RethinkStore) SignalReconnect() {
-	self.manager.SignalReconnect()
+	self.manager.Signal()
 }
 
 func (self *RethinkStore) IsConnected() bool {

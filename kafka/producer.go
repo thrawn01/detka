@@ -43,7 +43,7 @@ func (self *KafkaProducer) Send(msg models.QueueMessage) error {
 	if err != nil {
 		if err == sarama.ErrBrokerNotAvailable || err == sarama.ErrClosedClient {
 			// Signal We should reconnect
-			self.ctx.SignalReconnect()
+			self.ctx.Signal()
 		}
 		return err
 	}
@@ -59,7 +59,7 @@ func (self *KafkaProducer) Get(payload []byte) error {
 	if err != nil {
 		if err == sarama.ErrBrokerNotAvailable || err == sarama.ErrClosedClient {
 			// Signal We should reconnect
-			self.ctx.SignalReconnect()
+			self.ctx.Signal()
 		}
 		return err
 	}
@@ -75,5 +75,5 @@ func (self *NilProducer) Send(msg models.QueueMessage) error {
 
 // Returns the Kafka interface from our context
 func GetProducer(ctx context.Context) Producer {
-	return GetProducerManager(ctx).Get()
+	return GetProducerManager(ctx).GetProducer()
 }

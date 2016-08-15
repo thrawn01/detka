@@ -1,32 +1,33 @@
 package kafka
 
 import (
-	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/Sirupsen/logrus"
 	"github.com/thrawn01/args"
+	"github.com/thrawn01/detka/connection"
 )
 
 type ConsumerManager struct {
-	parser    *args.ArgParser
-	done      chan struct{}
-	new       chan sarama.PartitionConsumer
-	reconnect chan bool
-	connected bool
-	mutex     sync.Mutex
+	*connection.Manager
+	parser       *args.ArgParser
+	consumerChan chan sarama.PartitionConsumer
+	connected    bool
 }
 
 func NewConsumerManager(parser *args.ArgParser) *ConsumerManager {
 	manager := &ConsumerManager{
-		parser: parser,
+		&connection.Manager{},
+		parser,
+		make(chan sarama.PartitionConsumer, 1),
+		false,
 	}
 	manager.Start()
 	return manager
 }
 
-func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
+func (self *ConsumerManager) connect() bool {
 	opts := self.parser.GetOpts()
 	logrus.Info("Connecting to Kafka Cluster ", opts.StringSlice("kafka-endpoints"))
 	consumer, err := sarama.NewConsumer(opts.StringSlice("kafka-endpoints"), nil)
@@ -36,7 +37,7 @@ func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
 			"method": "NewConsumer()",
 		}).Error("Failed with - ", err.Error())
 		self.setConnected(false)
-		return nil, err
+		return false
 	}
 	partition, err := consumer.ConsumePartition(opts.String("kafka-topic"), 0, sarama.OffsetNewest)
 	if err != nil {
@@ -45,70 +46,36 @@ func (self *ConsumerManager) connect() (sarama.PartitionConsumer, error) {
 			"method": "ConsumePartition()",
 		}).Error("Failed with - ", err.Error())
 		self.setConnected(false)
-		return nil, err
+		return false
 	}
-	return partition, nil
+	if partition != nil {
+		self.setConnected(true)
+		self.consumerChan <- partition
+	}
+	return true
 }
 
 func (self *ConsumerManager) GetConsumerChannel() chan sarama.PartitionConsumer {
-	return self.new
+	return self.consumerChan
 }
 
 func (self *ConsumerManager) Start() {
-	self.new = make(chan sarama.PartitionConsumer)
-	self.reconnect = make(chan bool)
-	self.done = make(chan struct{})
-
-	var attemptedConnect sync.WaitGroup
-
-	go func() {
-		defer close(self.new)
-		var once sync.Once
-		attemptedConnect.Add(1)
-
-		for {
-			var timer <-chan time.Time
-
-			select {
-			case <-self.reconnect:
-			case <-timer:
-			case <-self.done:
-				return
-			}
-
-			consumer, err := self.connect()
-			if err != nil {
-				timer = time.NewTimer(time.Second).C
-			}
-			once.Do(func() { attemptedConnect.Done() })
-			if consumer != nil {
-				self.setConnected(true)
-				self.new <- consumer
-			}
-		}
-	}()
-
-	// Send the first connect signal
-	self.SignalReconnect()
-	// Attempt to connect at least once before we leave Start()
-	attemptedConnect.Wait()
-}
-
-func (self *ConsumerManager) SignalReconnect() {
-	self.reconnect <- true
+	// run connect(), if it fails try again every 2 seconds
+	self.Begin(self.connect, time.Second*2)
 }
 
 func (self *ConsumerManager) Stop() {
-	close(self.done)
+	self.End()
 }
 
-func (self *ConsumerManager) IsConnected() bool {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	return self.connected
+func (self *ConsumerManager) IsConnected() (result bool) {
+	self.WithLock(func() {
+		result = self.connected
+	})
+	return
 }
 func (self *ConsumerManager) setConnected(set bool) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	self.connected = set
+	self.WithLock(func() {
+		self.connected = set
+	})
 }

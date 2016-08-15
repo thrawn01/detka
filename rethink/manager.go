@@ -1,8 +1,6 @@
 package rethink
 
 import (
-	"sync"
-
 	"time"
 
 	"net/http"
@@ -13,6 +11,7 @@ import (
 	"github.com/dancannon/gorethink"
 	"github.com/pressly/chi"
 	"github.com/thrawn01/args"
+	"github.com/thrawn01/detka/connection"
 	"golang.org/x/net/context"
 )
 
@@ -48,83 +47,39 @@ func GetManager(ctx context.Context) *Manager {
 }
 
 type Manager struct {
-	done      chan struct{}
-	parser    *args.ArgParser
-	current   chan *gorethink.Session
-	new       chan *gorethink.Session
-	reconnect chan bool
+	*connection.Manager
+	parser  *args.ArgParser
+	session *gorethink.Session
 }
 
 func NewManager(parser *args.ArgParser) *Manager {
-	manager := &Manager{
-		parser: parser,
+	me := &Manager{
+		&connection.Manager{},
+		parser,
+		nil,
 	}
-	manager.Start()
-	return manager
+	me.Start()
+	return me
 }
 
-func (self *Manager) GetSession() *gorethink.Session {
-	return <-self.current
-}
-
-func (self *Manager) SignalReconnect() {
-	self.reconnect <- true
+func (self *Manager) GetSession() (result *gorethink.Session) {
+	self.WithLock(func() {
+		result = self.session
+	})
+	return
 }
 
 func (self *Manager) Start() {
-	self.current = make(chan *gorethink.Session)
-	self.new = make(chan *gorethink.Session)
-	self.reconnect = make(chan bool)
-	self.done = make(chan struct{})
+	// run connect(), if it fails try again every 2 seconds
+	self.Begin(self.connect, time.Second*2)
+}
 
-	// Always feed clients the latest rethink session
-	go func() {
-		defer close(self.current)
-		var current *gorethink.Session
-
-		for {
-			select {
-			case self.current <- current:
-			case current = <-self.new:
-			case <-self.done:
-				return
-			}
-		}
-	}()
-
-	var attemptedConnect sync.WaitGroup
-
-	// Waits until it receives a list of endpoints, then attempts to connect
-	// if it fails will sleep for 1 second and try again
-	go func() {
-		defer close(self.new)
-		var once sync.Once
-		attemptedConnect.Add(1)
-
-		for {
-			var timer <-chan time.Time
-
-			select {
-			case <-self.reconnect:
-				goto connect
-			case <-timer:
-				goto connect
-			case <-self.done:
-				return
-			}
-		connect:
-			// Attempt to connect, if we fail to connect, set a timer to try again
-			if !self.connect() {
-				timer = time.NewTimer(time.Second).C
-			}
-			once.Do(func() { attemptedConnect.Done() })
-		}
-	}()
-
-	// Send the first connect signal
-	self.SignalReconnect()
-	// Attempt to connect at least once before we leave Start()
-	attemptedConnect.Wait()
+func (self *Manager) Stop() {
+	session := self.GetSession()
+	if session != nil {
+		session.Close()
+	}
+	self.End()
 }
 
 func (self *Manager) connect() bool {
@@ -156,7 +111,9 @@ func (self *Manager) connect() bool {
 		}
 	}
 
-	self.new <- session
+	self.WithLock(func() {
+		self.session = session
+	})
 	return true
 }
 
@@ -167,14 +124,6 @@ func (self *Manager) createDbIfNotExists(session *gorethink.Session, opts *args.
 func (self *Manager) createTablesIfNotExists(session *gorethink.Session) bool {
 	err := gorethink.TableCreate("messages", gorethink.TableCreateOpts{PrimaryKey: "Id"}).Exec(session, ExecOpts)
 	return handleCreateError("createTablesIfNotExists", err)
-}
-
-func (self *Manager) Stop() {
-	session := self.GetSession()
-	if session != nil {
-		session.Close()
-	}
-	close(self.done)
 }
 
 // Injects rethink.Manager into the context.Context for each request
