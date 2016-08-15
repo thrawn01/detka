@@ -54,7 +54,7 @@ func (self *Worker) Start() {
 					"type":   "kafka",
 					"method": "Start()",
 				}).Error("Received Error - ", err.Error())
-				self.consumer.SignalReconnect()
+				self.consumer.Signal()
 			case <-self.done:
 				return
 			}
