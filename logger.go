@@ -11,7 +11,6 @@ wrapWriter() with associated code and struct's copied from CHI middleware
 package detka
 
 import (
-	"bufio"
 	"io"
 	"net"
 	"net/http"
@@ -125,24 +124,25 @@ type writerProxy interface {
 // WrapWriter wraps an http.ResponseWriter, returning a proxy that allows you to
 // hook into various parts of the response process.
 func wrapWriter(resp http.ResponseWriter) writerProxy {
-	_, closeNotifier := resp.(http.CloseNotifier)
-	_, flusher := resp.(http.Flusher)
-	_, hiJacker := resp.(http.Hijacker)
-	_, readerFrom := resp.(io.ReaderFrom)
+	closeNotifier := resp.(http.CloseNotifier)
+	flusher := resp.(http.Flusher)
+	hiJacker := resp.(http.Hijacker)
+	readerFrom := resp.(io.ReaderFrom)
 
-	basicWriter := basicWriter{ResponseWriter: resp}
-	if closeNotifier && flusher && hiJacker && readerFrom {
-		return &fancyWriter{basicWriter}
-	}
-	if flusher {
-		return &flushWriter{basicWriter}
-	}
-	return &basicWriter
+	return &WrappedWriter{
+		ReaderFrom:     readerFrom,
+		Hijacker:       hiJacker,
+		Flusher:        flusher,
+		CloseNotifier:  closeNotifier,
+		ResponseWriter: resp}
 }
 
-// basicWriter wraps a http.ResponseWriter that implements the minimal
-// http.ResponseWriter interface.
-type basicWriter struct {
+// Wraps a http.ResponseWriter includes all possible interfaces
+type WrappedWriter struct {
+	io.ReaderFrom
+	http.Hijacker
+	http.Flusher
+	http.CloseNotifier
 	http.ResponseWriter
 	wroteHeader bool
 	code        int
@@ -150,14 +150,14 @@ type basicWriter struct {
 	tee         io.Writer
 }
 
-func (self *basicWriter) WriteHeader(code int) {
+func (self *WrappedWriter) WriteHeader(code int) {
 	if !self.wroteHeader {
 		self.code = code
 		self.wroteHeader = true
 		self.ResponseWriter.WriteHeader(code)
 	}
 }
-func (self *basicWriter) Write(buf []byte) (int, error) {
+func (self *WrappedWriter) Write(buf []byte) (int, error) {
 	self.WriteHeader(http.StatusOK)
 	n, err := self.ResponseWriter.Write(buf)
 	if self.tee != nil {
@@ -170,65 +170,26 @@ func (self *basicWriter) Write(buf []byte) (int, error) {
 	self.bytes += n
 	return n, err
 }
-func (self *basicWriter) maybeWriteHeader() {
+func (self *WrappedWriter) maybeWriteHeader() {
 	if !self.wroteHeader {
 		self.WriteHeader(http.StatusOK)
 	}
 }
-func (self *basicWriter) Status() int {
+func (self *WrappedWriter) Status() int {
 	return self.code
 }
-func (self *basicWriter) BytesWritten() int {
+func (self *WrappedWriter) BytesWritten() int {
 	return self.bytes
 }
-func (self *basicWriter) Tee(writer io.Writer) {
+func (self *WrappedWriter) Tee(writer io.Writer) {
 	self.tee = writer
 }
-func (self *basicWriter) Unwrap() http.ResponseWriter {
+func (self *WrappedWriter) Unwrap() http.ResponseWriter {
 	return self.ResponseWriter
 }
 
-// fancyWriter is a writer that additionally satisfies http.CloseNotifier,
-// http.Flusher, http.Hijacker, and io.ReaderFrom. It exists for the common case
-// of wrapping the http.ResponseWriter that package http gives you, in order to
-// make the proxied object support the full method set of the proxied object.
-type fancyWriter struct {
-	basicWriter
-}
-
-func (self *fancyWriter) CloseNotify() <-chan bool {
-	closeNotifer := self.basicWriter.ResponseWriter.(http.CloseNotifier)
-	return closeNotifer.CloseNotify()
-}
-func (self *fancyWriter) Flush() {
-	flusher := self.basicWriter.ResponseWriter.(http.Flusher)
-	flusher.Flush()
-}
-func (self *fancyWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	highJacker := self.basicWriter.ResponseWriter.(http.Hijacker)
-	return highJacker.Hijack()
-}
-func (self *fancyWriter) ReadFrom(reader io.Reader) (int64, error) {
-	if self.basicWriter.tee != nil {
-		return io.Copy(&self.basicWriter, reader)
-	}
-	rf := self.basicWriter.ResponseWriter.(io.ReaderFrom)
-	self.basicWriter.maybeWriteHeader()
-	return rf.ReadFrom(reader)
-}
-
-var _ http.CloseNotifier = &fancyWriter{}
-var _ http.Flusher = &fancyWriter{}
-var _ http.Hijacker = &fancyWriter{}
-var _ io.ReaderFrom = &fancyWriter{}
-
-type flushWriter struct {
-	basicWriter
-}
-
-func (self *flushWriter) Flush() {
-	flusher := self.basicWriter.ResponseWriter.(http.Flusher)
-	flusher.Flush()
-}
-
-var _ http.Flusher = &flushWriter{}
+var _ http.CloseNotifier = &WrappedWriter{}
+var _ http.Flusher = &WrappedWriter{}
+var _ http.Hijacker = &WrappedWriter{}
+var _ io.ReaderFrom = &WrappedWriter{}
+var _ http.Flusher = &WrappedWriter{}
