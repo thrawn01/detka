@@ -124,16 +124,16 @@ type writerProxy interface {
 // WrapWriter wraps an http.ResponseWriter, returning a proxy that allows you to
 // hook into various parts of the response process.
 func wrapWriter(resp http.ResponseWriter) writerProxy {
-	closeNotifier := resp.(http.CloseNotifier)
+	//closeNotifier := resp.(http.CloseNotifier)
 	flusher := resp.(http.Flusher)
-	hiJacker := resp.(http.Hijacker)
-	readerFrom := resp.(io.ReaderFrom)
+	//hiJacker := resp.(http.Hijacker)
+	//readerFrom := resp.(io.ReaderFrom)
 
 	return &WrappedWriter{
-		ReaderFrom:     readerFrom,
-		Hijacker:       hiJacker,
-		Flusher:        flusher,
-		CloseNotifier:  closeNotifier,
+		//ReaderFrom: readerFrom,
+		//Hijacker:   hiJacker,
+		Flusher: flusher,
+		//CloseNotifier:  closeNotifier,
 		ResponseWriter: resp}
 }
 
